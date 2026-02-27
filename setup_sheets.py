@@ -4,29 +4,43 @@ Google Sheets Setup Script
 Run this ONCE to create all required tabs and headers in your Google Sheet.
 
 Usage:
+  pip install google-auth google-api-python-client python-dotenv
   python setup_sheets.py
 
 Requires:
-  - GOOGLE_APPLICATION_CREDENTIALS env var pointing to service_account.json
+  - GOOGLE_APPLICATION_CREDENTIALS env var (file path or raw JSON)
   - SHEETS_ID env var with your Google Sheet ID
+  - Service account must have Editor access on the Google Sheet
 """
 
+import json
 import os
-from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # running without dotenv — env vars must already be set
 
-SHEETS_ID = os.environ["SHEETS_ID"]
-CREDS_PATH = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+SHEETS_ID = os.environ.get("SHEETS_ID", "")
+if not SHEETS_ID:
+    raise RuntimeError("SHEETS_ID env var is not set. Set it in .env or export it.")
 
 
 def get_service():
-    creds = service_account.Credentials.from_service_account_file(
-        CREDS_PATH,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        info = json.loads(stripped)
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+    else:
+        creds = service_account.Credentials.from_service_account_file(
+            stripped, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
     return build("sheets", "v4", credentials=creds)
 
 

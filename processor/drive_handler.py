@@ -10,9 +10,10 @@ import random
 import logging
 from typing import Optional
 
-from google.oauth2 import service_account
 from googleapiclient.discovery import build, Resource
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+
+from processor.gcp_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,8 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 def get_drive_service() -> Resource:
     """Build and return an authenticated Google Drive service."""
-    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            creds_path, scopes=SCOPES
-        )
+        creds = get_credentials(scopes=SCOPES)
         return build("drive", "v3", credentials=creds)
     except Exception as e:
         logger.error(f"Failed to create Drive service: {e}")

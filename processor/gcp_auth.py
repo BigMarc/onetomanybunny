@@ -1,5 +1,5 @@
 """
-Shared Google credentials helper.
+Shared Google credentials helper for the processor container.
 
 Handles the case where GOOGLE_APPLICATION_CREDENTIALS contains
 either a file path OR the raw JSON content of the service account key
