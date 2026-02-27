@@ -377,24 +377,31 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
 
     # ── Check registration ────────────────────────────────────────────────────
-    # Check if an admin is waiting to register this person
+    # If an admin is waiting to register someone, register whoever messages next
     for admin_id, reg_data in list(_pending_registrations.items()):
-        if user.id != admin_id:  # Don't register the admin themselves
-            creator_name = reg_data["creator_name"]
-            success = register_creator(user.id, creator_name)
-            if success:
-                del _pending_registrations[admin_id]
+        creator_name = reg_data["creator_name"]
+        logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' via video (initiated by admin {admin_id})")
+        success = register_creator(user.id, creator_name)
+        if success:
+            del _pending_registrations[admin_id]
+            if user.id != admin_id:
                 await context.bot.send_message(
                     chat_id=admin_id,
                     text=f"✅ Registered {user.first_name} as *{creator_name}* (ID: `{user.id}`)",
                     parse_mode=ParseMode.MARKDOWN
                 )
-                await message.reply_text(
-                    f"You're now registered as *{creator_name}*! 🎉\n\n"
-                    f"Send me your video anytime to get started.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            break
+            await message.reply_text(
+                f"You're now registered as *{creator_name}*! 🎉\n\n"
+                f"Processing your video now...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            logger.error(f"register_creator failed for user {user.id} as '{creator_name}'")
+            await message.reply_text(
+                "⚠️ Registration failed — could not write to the registry.\n"
+                "Check the Google Sheets connection and try again."
+            )
+        break
 
     creator = get_creator_by_telegram_id(user.id)
     if not creator:
@@ -491,24 +498,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
 
-    # Complete pending registration (admins can also self-register)
+    # Complete pending registration — register the NEXT person who messages
     for admin_id, reg_data in list(_pending_registrations.items()):
-        if user.id != admin_id or is_admin(user.id):
-            creator_name = reg_data["creator_name"]
-            success = register_creator(user.id, creator_name)
-            if success:
-                del _pending_registrations[admin_id]
+        creator_name = reg_data["creator_name"]
+        logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' (initiated by admin {admin_id})")
+        success = register_creator(user.id, creator_name)
+        if success:
+            del _pending_registrations[admin_id]
+            # Notify the admin (only if a different person was registered)
+            if user.id != admin_id:
                 await context.bot.send_message(
                     chat_id=admin_id,
                     text=f"✅ Registered {user.first_name} as *{creator_name}*",
                     parse_mode=ParseMode.MARKDOWN
                 )
-                await message.reply_text(
-                    f"You're now registered as *{creator_name}*! 🎉\n\n"
-                    f"Just send me your video whenever you're ready.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            return
+            await message.reply_text(
+                f"You're now registered as *{creator_name}*! 🎉\n\n"
+                f"Just send me your video whenever you're ready.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            logger.error(f"register_creator failed for user {user.id} as '{creator_name}'")
+            await message.reply_text(
+                "⚠️ Registration failed — could not write to the registry.\n"
+                "Check the Google Sheets connection and try again."
+            )
+        return
 
     creator = get_creator_by_telegram_id(user.id)
     if creator:
