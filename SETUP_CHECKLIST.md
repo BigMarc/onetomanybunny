@@ -19,7 +19,7 @@
 - [ ] Root Drive folder shared with service account email (Editor)
 - [ ] Creator `UPLOAD HERE` folders shared with each creator's Google account (Editor)
 - [ ] Google Sheet created with 3 tabs, shared with service account (Editor)
-- [ ] SendGrid account created, domain verified, API key copied
+- [ ] Resend account created (https://resend.com), domain `bink.bio` verified, API key copied
 
 ## Run These Commands (in order)
 1. `cp .env.example .env` → fill in ALL values

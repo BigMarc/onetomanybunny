@@ -189,24 +189,23 @@ def _download_from_gcs(gcs_uri: str, destination: str):
 
 
 def _send_notification(creator_name: str, clip_count: int, folder_link: str, job_id: str):
-    """Send email via SendGrid if API key is set."""
-    import sendgrid
-    from sendgrid.helpers.mail import Mail
-    api_key = os.environ.get("SENDGRID_API_KEY")
+    """Send email via Resend if API key is set."""
+    import resend
+    api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         return
-    msg = Mail(
-        from_email="noreply@bunny-agency.com",
-        to_emails=NOTIFICATION_EMAIL,
-        subject=f"✅ {clip_count} Clips Ready — {creator_name}",
-        plain_text_content=(
+    resend.api_key = api_key
+    resend.Emails.send({
+        "from": "Bunny Clip Tool <noreply@bink.bio>",
+        "to": [NOTIFICATION_EMAIL],
+        "subject": f"✅ {clip_count} Clips Ready — {creator_name}",
+        "text": (
             f"{clip_count} clips for {creator_name} are ready.\n"
             f"Job ID: {job_id}\n"
             f"Drive folder: {folder_link}\n\n"
             f"— Bunny Clip Tool"
-        )
-    )
-    sendgrid.SendGridAPIClient(api_key).send(msg)
+        ),
+    })
 
 
 if __name__ == "__main__":
