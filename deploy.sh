@@ -65,16 +65,16 @@ if [ "$UPDATE_ONLY" = false ]; then
     echo "   ✅ telegram-bot-token created"
   fi
 
-  # SendGrid API key (if set)
-  if [ -n "$SENDGRID_API_KEY" ]; then
-    if gcloud secrets describe sendgrid-api-key --quiet &>/dev/null; then
-      echo -n "$SENDGRID_API_KEY" | \
-        gcloud secrets versions add sendgrid-api-key --data-file=- --quiet 2>/dev/null
-      echo "   ✅ sendgrid-api-key updated"
+  # Resend API key (if set)
+  if [ -n "$RESEND_API_KEY" ]; then
+    if gcloud secrets describe resend-api-key --quiet &>/dev/null; then
+      echo -n "$RESEND_API_KEY" | \
+        gcloud secrets versions add resend-api-key --data-file=- --quiet 2>/dev/null
+      echo "   ✅ resend-api-key updated"
     else
-      echo -n "$SENDGRID_API_KEY" | \
-        gcloud secrets create sendgrid-api-key --data-file=- --quiet
-      echo "   ✅ sendgrid-api-key created"
+      echo -n "$RESEND_API_KEY" | \
+        gcloud secrets create resend-api-key --data-file=- --quiet
+      echo "   ✅ resend-api-key created"
     fi
   fi
 fi
@@ -100,7 +100,7 @@ TEXT_FONT_SIZE=${TEXT_FONT_SIZE:-52},\
 TEXT_POSITION=${TEXT_POSITION:-bottom}" \
   --set-secrets "\
 GOOGLE_APPLICATION_CREDENTIALS=service-account-key:latest,\
-SENDGRID_API_KEY=sendgrid-api-key:latest" \
+RESEND_API_KEY=resend-api-key:latest" \
   --memory 4Gi \
   --cpu 2 \
   --timeout 3600 \

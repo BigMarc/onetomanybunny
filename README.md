@@ -204,12 +204,12 @@ You need the folder IDs for:
 2. It replies with your user ID (a number like `123456789`)
 3. This goes in `ADMIN_TELEGRAM_IDS`
 
-### 8. SendGrid (for email notifications)
+### 8. Resend (for email notifications)
 
-1. Sign up at [sendgrid.com](https://sendgrid.com)
-2. Verify your sender domain
-3. Create an API key (Settings > API Keys > Create API Key)
-4. Copy the key for `SENDGRID_API_KEY`
+1. Sign up at [resend.com](https://resend.com)
+2. Verify your sender domain (`bink.bio`)
+3. Create an API key (API Keys > Create API Key)
+4. Copy the key for `RESEND_API_KEY`
 
 ### 9. Configure Environment
 
@@ -230,7 +230,7 @@ Open `.env` and fill in every value:
 | `SOUNDS_FOLDER_ID` | Drive folder ID of `_SOUNDS LIBRARY` (step 4) |
 | `PROCESSED_FOLDER_ID` | Drive folder ID of `_PROCESSED` (step 4) |
 | `NOTIFICATION_EMAIL` | Your email for job notifications |
-| `SENDGRID_API_KEY` | From SendGrid dashboard (step 8) |
+| `RESEND_API_KEY` | From Resend dashboard (step 8) |
 | `CLIP_DURATION` | `7` (seconds per clip) |
 | `TEXT_FONT_SIZE` | `52` |
 | `TEXT_POSITION` | `bottom` |

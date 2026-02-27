@@ -3,13 +3,28 @@
 
 FROM python:3.11-slim
 
-# FFmpeg is required for moviepy video processing
+# FFmpeg + fonts for moviepy video processing with text overlays
+# Playfair Display (primary) and DejaVu Sans Bold (fallback)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
     libgl1-mesa-glx \
+    fontconfig \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Playfair Display Bold from Google Fonts
+RUN mkdir -p /usr/share/fonts/truetype/playfair && \
+    apt-get update && apt-get install -y wget && \
+    wget -q -O /tmp/playfair.zip "https://fonts.google.com/download?family=Playfair+Display" && \
+    unzip -q /tmp/playfair.zip -d /tmp/playfair && \
+    cp /tmp/playfair/static/PlayfairDisplay-Bold.ttf /usr/share/fonts/truetype/playfair/ && \
+    cp /tmp/playfair/static/PlayfairDisplay-ExtraBold.ttf /usr/share/fonts/truetype/playfair/ 2>/dev/null || true && \
+    rm -rf /tmp/playfair /tmp/playfair.zip && \
+    apt-get remove -y wget && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    fc-cache -f -v
 
 WORKDIR /app
 
