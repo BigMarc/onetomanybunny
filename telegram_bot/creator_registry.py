@@ -17,7 +17,8 @@ import logging
 from datetime import datetime
 from functools import lru_cache
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
+
+from telegram_bot.gcp_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,7 @@ PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
 
 
 def _get_sheets_service():
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    creds = get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return build("sheets", "v4", credentials=creds)
 
 

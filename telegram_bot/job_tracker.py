@@ -14,7 +14,8 @@ import os
 import logging
 from datetime import datetime
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
+
+from telegram_bot.gcp_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 SHEETS_ID = os.environ.get("SHEETS_ID", "")
@@ -26,10 +27,7 @@ STATUS_FAILED      = "failed"
 
 
 def _svc():
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    creds = get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return build("sheets", "v4", credentials=creds)
 
 
