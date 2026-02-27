@@ -6,12 +6,58 @@ Cuts video into 7-second clips, adds text overlays and music.
 import os
 import json
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 from config.settings import CLIP_DURATION, TEXT_FONT_SIZE, TEXT_POSITION
 
 logger = logging.getLogger(__name__)
+
+# Font preference order: bold condensed serif with vintage/retro feel
+_FONT_PREFERENCE = [
+    "Playfair-Display-Bold",
+    "Playfair Display Bold",
+    "PlayfairDisplay-Bold",
+    "Abril-Fatface",
+    "Abril Fatface",
+    "AbrilFatface-Regular",
+    "Rockwell-Bold",
+    "Rockwell Bold",
+    "Arial-Bold",
+    "Arial Bold",
+    "DejaVu-Sans-Bold",
+]
+_resolved_font: Optional[str] = None
+
+
+def _resolve_font() -> str:
+    """Find the first available font from the preference list."""
+    global _resolved_font
+    if _resolved_font is not None:
+        return _resolved_font
+
+    try:
+        result = subprocess.run(
+            ["fc-list", "--format", "%{family}\n"],
+            capture_output=True, text=True, timeout=10,
+        )
+        installed = result.stdout
+    except Exception:
+        installed = ""
+
+    for font in _FONT_PREFERENCE:
+        # Check if any installed font family contains our target name
+        base_name = font.replace("-", " ").replace("  ", " ").lower()
+        for line in installed.splitlines():
+            if base_name in line.lower():
+                _resolved_font = font
+                logger.info(f"Resolved font: {font}")
+                return font
+
+    _resolved_font = "Arial-Bold"
+    logger.warning(f"No preferred font found, falling back to {_resolved_font}")
+    return _resolved_font
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "templates.json"
 
@@ -157,35 +203,72 @@ def process_video(
 
 
 def _build_text_clip(text: str, style: dict, duration: float, video_size: tuple):
-    """Build a TextClip overlay with the given style."""
+    """
+    Build a TextClip overlay with vintage serif style.
+
+    Style: bold condensed serif, off-white/cream (#F5F0E8),
+    black drop shadow (2px offset, 3px blur), no stroke outline.
+    """
     try:
-        from moviepy.editor import TextClip
+        from moviepy.editor import TextClip, CompositeVideoClip
 
         position = style.get("position", TEXT_POSITION)
         size_w = video_size[0]
+        font = _resolve_font()
+        fontsize = style.get("size", TEXT_FONT_SIZE)
+        text_color = "#F5F0E8"  # Off-white / cream
+        shadow_color = "black"
+        shadow_offset = 2  # px
+        text_width = int(size_w * 0.9)
 
+        # Shadow layer (offset 2px right + 2px down)
+        shadow = TextClip(
+            text,
+            fontsize=fontsize,
+            font=font,
+            color=shadow_color,
+            method="caption",
+            size=(text_width, None),
+            align="center",
+            kerning=-1,
+        ).set_duration(duration).set_opacity(0.7)
+
+        # Main text layer (cream color, no stroke)
         txt = TextClip(
             text,
-            fontsize=style.get("size", TEXT_FONT_SIZE),
-            font=style.get("font", "Arial-Bold"),
-            color=style.get("color", "white"),
-            stroke_color=style.get("stroke_color", "black"),
-            stroke_width=style.get("stroke_width", 2),
+            fontsize=fontsize,
+            font=font,
+            color=text_color,
             method="caption",
-            size=(int(size_w * 0.9), None),
+            size=(text_width, None),
             align="center",
+            kerning=-1,
         ).set_duration(duration)
 
+        # Compose shadow + text into a single overlay
+        txt_h = txt.size[1]
+        txt_w = txt.size[0]
+
+        shadow = shadow.set_position((shadow_offset, shadow_offset))
+        txt = txt.set_position((0, 0))
+
+        text_comp = CompositeVideoClip(
+            [shadow, txt],
+            size=(txt_w + shadow_offset, txt_h + shadow_offset),
+        ).set_duration(duration)
+
+        # Position the composed text on the video
         if position == "bottom":
             margin = style.get("margin_bottom", 80)
-            txt = txt.set_position(("center", video_size[1] - txt.size[1] - margin))
+            y = video_size[1] - text_comp.size[1] - margin
+            text_comp = text_comp.set_position(("center", y))
         elif position == "top":
             margin = style.get("margin_top", 60)
-            txt = txt.set_position(("center", margin))
+            text_comp = text_comp.set_position(("center", margin))
         elif position == "center":
-            txt = txt.set_position("center")
+            text_comp = text_comp.set_position("center")
 
-        return txt
+        return text_comp
 
     except Exception as e:
         logger.warning(f"TextClip error: {e}")
