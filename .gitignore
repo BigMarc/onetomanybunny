@@ -1,0 +1,29 @@
+# Environment
+.env
+service_account.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Outputs
+static/uploads/
+static/outputs/
+static/sounds/
+
+# Temp
+*.tmp
+*.log

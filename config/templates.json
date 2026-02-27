@@ -1,0 +1,83 @@
+{
+  "title_presets": [
+    "She moves different 🔥",
+    "POV: You can't look away",
+    "This energy >>> 😮‍💨",
+    "Tell me you're confident without telling me",
+    "The vibe is immaculate ✨",
+    "Not the way she just did that 😭",
+    "Main character energy 👑",
+    "She said what she said 💅",
+    "This is what we mean by goddess energy",
+    "The confidence is contagious fr",
+    "Waking up like this hits different 🌙",
+    "No one does it like her",
+    "Link in bio 👇🔥",
+    "She's built different and she knows it",
+    "The way she moves omg 🫠",
+    "You need to see the full video 👀",
+    "She came to show out today 💥",
+    "POV: You found the most beautiful girl on your feed",
+    "Not a single flaw detected 🤌",
+    "This is the content we needed",
+    "Obsessed and I won't apologize",
+    "The way she's living rent free in my head",
+    "Drop a ❤️ if you agree",
+    "She eats every time, no crumbs",
+    "Follow for more 🐰",
+    "Don't scroll past this",
+    "The girls that get it, get it",
+    "Daily reminder that she exists 🙏",
+    "Energy check: ✅✅✅",
+    "She's that girl and she's aware"
+  ],
+  "text_styles": {
+    "default": {
+      "font": "Arial-Bold",
+      "size": 52,
+      "color": "white",
+      "stroke_color": "black",
+      "stroke_width": 2,
+      "position": "bottom",
+      "margin_bottom": 80
+    },
+    "big_top": {
+      "font": "Arial-Bold",
+      "size": 64,
+      "color": "white",
+      "stroke_color": "black",
+      "stroke_width": 3,
+      "position": "top",
+      "margin_top": 60
+    },
+    "center_minimal": {
+      "font": "Arial",
+      "size": 48,
+      "color": "white",
+      "stroke_color": "black",
+      "stroke_width": 1,
+      "position": "center",
+      "margin_bottom": 0
+    }
+  },
+  "sound_library": [
+    {"id": "upbeat_1", "name": "Upbeat Pop 1", "file": "upbeat_1.mp3", "bpm": 128, "mood": "energetic"},
+    {"id": "upbeat_2", "name": "Upbeat Pop 2", "file": "upbeat_2.mp3", "bpm": 120, "mood": "energetic"},
+    {"id": "chill_1", "name": "Chill Vibe 1", "file": "chill_1.mp3", "bpm": 90, "mood": "chill"},
+    {"id": "chill_2", "name": "Chill Vibe 2", "file": "chill_2.mp3", "bpm": 85, "mood": "chill"},
+    {"id": "hype_1", "name": "Hype Beat 1", "file": "hype_1.mp3", "bpm": 140, "mood": "hype"},
+    {"id": "hype_2", "name": "Hype Beat 2", "file": "hype_2.mp3", "bpm": 145, "mood": "hype"},
+    {"id": "sexy_1", "name": "Smooth R&B 1", "file": "sexy_1.mp3", "bpm": 75, "mood": "sensual"},
+    {"id": "sexy_2", "name": "Smooth R&B 2", "file": "sexy_2.mp3", "bpm": 80, "mood": "sensual"}
+  ],
+  "clip_settings": {
+    "clip_duration_seconds": 7,
+    "fade_in_seconds": 0.3,
+    "fade_out_seconds": 0.3,
+    "output_format": "mp4",
+    "output_resolution": "1080x1920",
+    "output_fps": 30,
+    "audio_volume": 0.85,
+    "original_audio_volume": 0.0
+  }
+}
