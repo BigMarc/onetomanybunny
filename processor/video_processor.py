@@ -257,16 +257,9 @@ def _build_text_clip(text: str, style: dict, duration: float, video_size: tuple)
             size=(txt_w + shadow_offset, txt_h + shadow_offset),
         ).set_duration(duration)
 
-        # Position the composed text on the video
-        if position == "bottom":
-            margin = style.get("margin_bottom", 80)
-            y = video_size[1] - text_comp.size[1] - margin
-            text_comp = text_comp.set_position(("center", y))
-        elif position == "top":
-            margin = style.get("margin_top", 60)
-            text_comp = text_comp.set_position(("center", margin))
-        elif position == "center":
-            text_comp = text_comp.set_position("center")
+        # Position: top zone — 15% from the top edge, horizontally centered
+        y = int(video_size[1] * 0.15)
+        text_comp = text_comp.set_position(("center", y))
 
         return text_comp
 
