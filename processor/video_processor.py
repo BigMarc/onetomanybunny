@@ -10,8 +10,6 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from config.settings import CLIP_DURATION, TEXT_FONT_SIZE, TEXT_POSITION
-
 logger = logging.getLogger(__name__)
 
 # Font preference order: bold condensed serif with vintage/retro feel
@@ -100,7 +98,7 @@ def process_video(
 
     config = load_config()
     clip_settings = config["clip_settings"]
-    clip_duration = CLIP_DURATION
+    clip_duration = clip_settings.get("clip_duration_seconds", 7)
     text_style = config["text_styles"].get("default", {})
 
     if output_dir is None:
@@ -212,10 +210,10 @@ def _build_text_clip(text: str, style: dict, duration: float, video_size: tuple)
     try:
         from moviepy.editor import TextClip, CompositeVideoClip
 
-        position = style.get("position", TEXT_POSITION)
+        position = style.get("position", "bottom")
         size_w = video_size[0]
         font = _resolve_font()
-        fontsize = style.get("size", TEXT_FONT_SIZE)
+        fontsize = style.get("size", 52)
         text_color = "#F5F0E8"  # Off-white / cream
         shadow_color = "black"
         shadow_offset = 2  # px
