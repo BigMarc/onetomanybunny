@@ -337,13 +337,10 @@ async def cmd_creators(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Admin only.")
         return
 
-    from google.oauth2 import service_account
     from googleapiclient.discovery import build
+    from telegram_bot.gcp_auth import get_credentials
 
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    )
+    creds = get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
     svc = build("sheets", "v4", credentials=creds)
     result = svc.spreadsheets().values().get(
         spreadsheetId=os.environ.get("SHEETS_ID", ""),

@@ -17,17 +17,15 @@ import zipfile
 import tempfile
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-from google.oauth2 import service_account
+
+from telegram_bot.gcp_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
 
 def _drive():
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-            scopes=["https://www.googleapis.com/auth/drive"]
-        )
+        creds = get_credentials(scopes=["https://www.googleapis.com/auth/drive"])
         return build("drive", "v3", credentials=creds)
     except Exception as e:
         logger.error(f"Failed to create Drive service: {e}")
