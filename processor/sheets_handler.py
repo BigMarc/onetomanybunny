@@ -11,20 +11,17 @@ import os
 import logging
 from datetime import datetime
 
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+from processor.gcp_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
 
 def _get_sheets_service():
     """Build and return an authenticated Google Sheets service."""
-    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            creds_path,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
-        )
+        creds = get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
         return build("sheets", "v4", credentials=creds)
     except Exception as e:
         logger.error(f"Failed to create Sheets service: {e}")

@@ -45,7 +45,7 @@ from telegram.constants import ParseMode
 
 # ── Local modules ─────────────────────────────────────────────────────────────
 from telegram_bot.creator_registry import (
-    get_creator_by_telegram_id, register_creator, is_admin
+    get_creator_by_telegram_id, register_creator, add_creator_direct, is_admin
 )
 from telegram_bot.job_tracker import (
     create_job, update_job, get_job, get_pending_jobs,
@@ -364,6 +364,42 @@ async def cmd_creators(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
+async def cmd_addcreator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /addcreator <telegram_id> <name> — directly register a creator by ID."""
+    user = update.effective_user
+    if not is_admin(user.id):
+        await update.message.reply_text("❌ Admin only.")
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "Usage: `/addcreator <telegram_id> <creator_name>`\n\n"
+            "Example: `/addcreator 755651205 Marc`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    try:
+        telegram_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ First argument must be a numeric Telegram ID.")
+        return
+
+    creator_name = " ".join(context.args[1:])
+    success = add_creator_direct(telegram_id, creator_name)
+
+    if success:
+        await update.message.reply_text(
+            f"✅ Directly registered *{creator_name}* (Telegram ID: `{telegram_id}`)",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Registration failed — could not write to the Registry sheet.\n"
+            "Check the Google Sheets connection and try again."
+        )
+
+
 # ── Video Message Handler ─────────────────────────────────────────────────────
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -583,6 +619,7 @@ def main():
     app.add_handler(CommandHandler("status",    cmd_status))
     app.add_handler(CommandHandler("register",  cmd_register))
     app.add_handler(CommandHandler("creators",  cmd_creators))
+    app.add_handler(CommandHandler("addcreator", cmd_addcreator))
 
     # Video and document messages (large files sent as documents)
     app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))

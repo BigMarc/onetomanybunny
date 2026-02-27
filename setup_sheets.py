@@ -1,3 +1,7 @@
+# Run this ONCE before first use:
+#   pip install google-auth google-api-python-client python-dotenv
+#   python setup_sheets.py
+
 """
 Google Sheets Setup Script
 ===========================
@@ -7,26 +11,40 @@ Usage:
   python setup_sheets.py
 
 Requires:
-  - GOOGLE_APPLICATION_CREDENTIALS env var pointing to service_account.json
+  - GOOGLE_APPLICATION_CREDENTIALS env var (file path or raw JSON)
   - SHEETS_ID env var with your Google Sheet ID
 """
 
+import json
 import os
-from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # running in Cloud environment, env vars already set
 
 SHEETS_ID = os.environ["SHEETS_ID"]
-CREDS_PATH = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 
 
 def get_service():
-    creds = service_account.Credentials.from_service_account_file(
-        CREDS_PATH,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not raw:
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        info = json.loads(stripped)
+        creds = service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+    else:
+        creds = service_account.Credentials.from_service_account_file(
+            stripped,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
     return build("sheets", "v4", credentials=creds)
 
 

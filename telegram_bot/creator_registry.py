@@ -87,6 +87,15 @@ def register_creator(telegram_id: int, creator_name: str, output_folder_id: str 
         return False
 
 
+def add_creator_direct(telegram_id: int, creator_name: str, output_folder_id: str = "") -> bool:
+    """
+    Directly register a creator by Telegram ID and name.
+    Bypasses the two-step /register flow — writes straight to the Registry sheet.
+    Used by the /addcreator admin command.
+    """
+    return register_creator(telegram_id, creator_name, output_folder_id)
+
+
 def is_admin(telegram_id: int) -> bool:
     """
     Check if a Telegram ID belongs to an admin (staff member).

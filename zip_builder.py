@@ -12,6 +12,7 @@ Used by the Telegram bot to send a single download link.
 """
 
 import io
+import json
 import os
 import logging
 import zipfile
@@ -23,11 +24,19 @@ from google.oauth2 import service_account
 logger = logging.getLogger(__name__)
 
 
+def _get_credentials(scopes):
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not raw:
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        info = json.loads(stripped)
+        return service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    return service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
+
+
 def _drive():
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
+    creds = _get_credentials(scopes=["https://www.googleapis.com/auth/drive"])
     return build("drive", "v3", credentials=creds)
 
 

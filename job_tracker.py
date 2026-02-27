@@ -10,6 +10,7 @@ Sheet structure (tab name: "Jobs"):
 | A: job_id | B: telegram_chat_id | C: creator_name | D: status | E: clip_count | F: folder_link | G: started_at | H: finished_at |
 """
 
+import json
 import os
 import logging
 from datetime import datetime
@@ -25,11 +26,19 @@ STATUS_DONE        = "done"
 STATUS_FAILED      = "failed"
 
 
+def _get_credentials(scopes):
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not raw:
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        info = json.loads(stripped)
+        return service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    return service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
+
+
 def _svc():
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    creds = _get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return build("sheets", "v4", credentials=creds)
 
 

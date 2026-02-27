@@ -6,9 +6,12 @@ Loads environment variables and starts the Telegram bot.
 
 import os
 import logging
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # running in Cloud environment, env vars already set
 
 logging.basicConfig(
     level=logging.INFO,

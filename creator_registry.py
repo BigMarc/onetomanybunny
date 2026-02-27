@@ -12,6 +12,7 @@ Sheet structure (tab name: "Registry"):
 | 987654321     | Lena            | 1def...          | 2024-01-16   |
 """
 
+import json
 import os
 import logging
 from datetime import datetime
@@ -25,11 +26,19 @@ SHEETS_ID = os.environ.get("SHEETS_ID", "")
 PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
 
 
+def _get_credentials(scopes):
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not raw:
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
+    stripped = raw.strip()
+    if stripped.startswith("{"):
+        info = json.loads(stripped)
+        return service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    return service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
+
+
 def _get_sheets_service():
-    creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json"),
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    creds = _get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return build("sheets", "v4", credentials=creds)
 
 
