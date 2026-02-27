@@ -1,8 +1,11 @@
 #!/bin/bash
 # ============================================================
 # Bunny Clip Tool — Full Deployment Script
-# Run this once to deploy both Cloud Run services.
-# 
+#
+# Usage:
+#   bash deploy.sh          # Full deploy (secrets + services)
+#   bash deploy.sh --update # Code-only redeploy (skip secrets)
+#
 # Prerequisites:
 #   - gcloud CLI installed and authenticated
 #   - service_account.json in current directory
@@ -11,9 +14,15 @@
 
 set -e  # Stop on any error
 
+UPDATE_ONLY=false
+if [ "$1" == "--update" ]; then
+  UPDATE_ONLY=true
+  echo "🔄 Update mode — skipping secret creation, redeploying code only."
+fi
+
 # ── Load .env ─────────────────────────────────────────────────
 if [ -f .env ]; then
-  export $(grep -v '^#' .env | xargs)
+  export $(grep -v '^#' .env | grep -v '^\s*$' | xargs)
 else
   echo "❌ No .env file found. Copy .env.example to .env and fill in values."
   exit 1
@@ -27,33 +36,47 @@ echo ""
 echo "🚀 Starting Bunny Clip Tool deployment..."
 echo "   Project: $PROJECT_ID"
 echo "   Region:  $REGION"
+echo "   Mode:    $([ "$UPDATE_ONLY" = true ] && echo 'UPDATE (code only)' || echo 'FULL (secrets + code)')"
 echo ""
 
 # ── Step 1: Set project ───────────────────────────────────────
-gcloud config set project $PROJECT_ID
+gcloud config set project $PROJECT_ID --quiet
 
-# ── Step 2: Store secrets ─────────────────────────────────────
-echo "🔐 Storing secrets in Secret Manager..."
+# ── Step 2: Store secrets (skip in --update mode) ─────────────
+if [ "$UPDATE_ONLY" = false ]; then
+  echo "🔐 Storing secrets in Secret Manager..."
 
-# Service account key
-gcloud secrets describe service-account-key &>/dev/null || \
-  gcloud secrets create service-account-key --data-file=service_account.json
-echo "   ✅ service-account-key"
+  # Service account key
+  if gcloud secrets describe service-account-key --quiet &>/dev/null; then
+    echo "   ⏭️  service-account-key already exists — skipping"
+  else
+    gcloud secrets create service-account-key --data-file=service_account.json --quiet
+    echo "   ✅ service-account-key created"
+  fi
 
-# Telegram bot token
-echo -n "$TELEGRAM_BOT_TOKEN" | \
-  gcloud secrets versions add telegram-bot-token --data-file=- 2>/dev/null || \
-  echo -n "$TELEGRAM_BOT_TOKEN" | \
-  gcloud secrets create telegram-bot-token --data-file=-
-echo "   ✅ telegram-bot-token"
+  # Telegram bot token
+  if gcloud secrets describe telegram-bot-token --quiet &>/dev/null; then
+    echo -n "$TELEGRAM_BOT_TOKEN" | \
+      gcloud secrets versions add telegram-bot-token --data-file=- --quiet 2>/dev/null
+    echo "   ✅ telegram-bot-token updated"
+  else
+    echo -n "$TELEGRAM_BOT_TOKEN" | \
+      gcloud secrets create telegram-bot-token --data-file=- --quiet
+    echo "   ✅ telegram-bot-token created"
+  fi
 
-# SendGrid API key (if set)
-if [ -n "$SENDGRID_API_KEY" ]; then
-  echo -n "$SENDGRID_API_KEY" | \
-    gcloud secrets versions add sendgrid-api-key --data-file=- 2>/dev/null || \
-    echo -n "$SENDGRID_API_KEY" | \
-    gcloud secrets create sendgrid-api-key --data-file=-
-  echo "   ✅ sendgrid-api-key"
+  # SendGrid API key (if set)
+  if [ -n "$SENDGRID_API_KEY" ]; then
+    if gcloud secrets describe sendgrid-api-key --quiet &>/dev/null; then
+      echo -n "$SENDGRID_API_KEY" | \
+        gcloud secrets versions add sendgrid-api-key --data-file=- --quiet 2>/dev/null
+      echo "   ✅ sendgrid-api-key updated"
+    else
+      echo -n "$SENDGRID_API_KEY" | \
+        gcloud secrets create sendgrid-api-key --data-file=- --quiet
+      echo "   ✅ sendgrid-api-key created"
+    fi
+  fi
 fi
 
 # ── Step 3: Deploy Video Processor (main Cloud Run service) ───
@@ -85,8 +108,18 @@ SENDGRID_API_KEY=sendgrid-api-key:latest" \
   --quiet
 
 PROCESSOR_URL=$(gcloud run services describe bunny-clip-processor \
-  --region $REGION --format "value(status.url)")
+  --region $REGION --format "value(status.url)" --quiet)
 echo "   ✅ Processor URL: $PROCESSOR_URL"
+
+# ── Step 3b: Auto-update CLOUD_RUN_URL in .env ────────────────
+if grep -q "^CLOUD_RUN_URL=" .env; then
+  sed -i "s|^CLOUD_RUN_URL=.*|CLOUD_RUN_URL=${PROCESSOR_URL}|" .env
+  echo "   ✅ Updated CLOUD_RUN_URL in .env"
+else
+  echo "CLOUD_RUN_URL=${PROCESSOR_URL}" >> .env
+  echo "   ✅ Added CLOUD_RUN_URL to .env"
+fi
+export CLOUD_RUN_URL=$PROCESSOR_URL
 
 # ── Step 4: Deploy Telegram Bot service ───────────────────────
 echo ""
@@ -117,19 +150,14 @@ GOOGLE_APPLICATION_CREDENTIALS=service-account-key:latest" \
   --quiet
 
 BOT_URL=$(gcloud run services describe bunny-clip-bot \
-  --region $REGION --format "value(status.url)")
+  --region $REGION --format "value(status.url)" --quiet)
 echo "   ✅ Bot URL: $BOT_URL"
-
-# ── Step 5: Update Apps Script URL ───────────────────────────
-echo ""
-echo "📋 Copy this URL into your Apps Script CLOUD_RUN_URL variable:"
-echo "   $PROCESSOR_URL"
 
 # ── Done ──────────────────────────────────────────────────────
 echo ""
-echo "✅ ========================================"
-echo "✅  Deployment complete!"
-echo "✅ ========================================"
+echo "════════════════════════════════════════════"
+echo "  Deployment complete!"
+echo "════════════════════════════════════════════"
 echo ""
 echo "   Processor: $PROCESSOR_URL"
 echo "   Bot:       $BOT_URL"
@@ -138,6 +166,5 @@ echo "   Next steps:"
 echo "   1. Update CLOUD_RUN_URL in Apps Script to: $PROCESSOR_URL"
 echo "   2. Get your Telegram user ID: message @userinfobot on Telegram"
 echo "   3. Add your ID to ADMIN_TELEGRAM_IDS in .env"
-echo "   4. Redeploy bot: gcloud run deploy bunny-clip-bot --source . --dockerfile Dockerfile.bot --region $REGION"
-echo "   5. Test: send a video to your bot!"
+echo "   4. Test: send /start to your bot on Telegram"
 echo ""
