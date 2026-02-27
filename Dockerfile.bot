@@ -1,0 +1,27 @@
+# ── Dockerfile.bot ────────────────────────────────────────────
+# Telegram Bot service — deployed separately from the video processor.
+# Lightweight: no FFmpeg needed, just API calls.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Only install what the bot needs (not FFmpeg/moviepy)
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    python-telegram-bot>=20.7 \
+    httpx>=0.25.0 \
+    google-auth>=2.23.0 \
+    google-auth-httplib2>=0.1.1 \
+    google-api-python-client>=2.100.0 \
+    google-cloud-storage>=2.10.0 \
+    google-cloud-secret-manager>=2.16.0 \
+    sendgrid>=6.9.0 \
+    python-dotenv>=1.0.0
+
+COPY . .
+
+ENV PORT=8080
+
+# Telegram bots use long polling — no HTTP server needed
+CMD ["python", "run_bot.py"]
