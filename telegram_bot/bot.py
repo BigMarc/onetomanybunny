@@ -491,9 +491,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
 
-    # Complete pending registration
+    # Complete pending registration (admins can also self-register)
     for admin_id, reg_data in list(_pending_registrations.items()):
-        if user.id != admin_id:
+        if user.id != admin_id or is_admin(user.id):
             creator_name = reg_data["creator_name"]
             success = register_creator(user.id, creator_name)
             if success:
