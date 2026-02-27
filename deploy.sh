@@ -85,7 +85,6 @@ echo "⚙️  Deploying Video Processor service..."
 
 gcloud run deploy bunny-clip-processor \
   --source . \
-  --dockerfile Dockerfile \
   --platform managed \
   --region $REGION \
   --service-account $SA_EMAIL \
@@ -122,9 +121,12 @@ export CLOUD_RUN_URL=$PROCESSOR_URL
 echo ""
 echo "🤖 Deploying Telegram Bot service..."
 
+# Swap Dockerfile.bot → Dockerfile so --source picks it up
+mv Dockerfile Dockerfile.processor
+cp Dockerfile.bot Dockerfile
+
 gcloud run deploy bunny-clip-bot \
   --source . \
-  --dockerfile Dockerfile.bot \
   --platform managed \
   --region $REGION \
   --service-account $SA_EMAIL \
@@ -145,6 +147,9 @@ GOOGLE_APPLICATION_CREDENTIALS=service-account-key:latest" \
   --min-instances 1 \
   --allow-unauthenticated \
   --quiet
+
+# Restore original Dockerfile
+mv Dockerfile.processor Dockerfile
 
 BOT_URL=$(gcloud run services describe bunny-clip-bot \
   --region $REGION --format "value(status.url)" --quiet)

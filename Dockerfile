@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
-    libgl1-mesa-glx \
+    libgl1-mesa-dri \
     fontconfig \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
