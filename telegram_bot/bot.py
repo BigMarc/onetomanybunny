@@ -522,6 +522,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ── Health Check Server (for Cloud Run) ──────────────────────────────────────
+
+def _start_health_server():
+    """Start a minimal HTTP server so Cloud Run's startup probe succeeds."""
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass  # suppress request logs
+
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"Health-check server listening on port {port}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -530,6 +553,9 @@ def main():
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
     if not CLOUD_RUN_URL:
         raise RuntimeError("CLOUD_RUN_URL not set")
+
+    # Cloud Run requires the container to listen on PORT for health checks
+    _start_health_server()
 
     logger.info("Starting Bunny Clip Bot...")
 
