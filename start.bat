@@ -1,14 +1,13 @@
 @echo off
 call venv\Scripts\activate.bat
 
-echo 🐰 Starting Bunny Clip Tool...
-echo    Processor will open in a new window
-echo    Bot runs in this window
+echo.
+echo   Bunny Clip Tool starting...
+echo   Open http://localhost:5050 in your browser.
+echo   Press Ctrl+C to stop.
 echo.
 
-:: Start processor in new window
-start "Bunny Processor" cmd /k "call venv\Scripts\activate.bat && python main.py"
+:: Open browser automatically
+start http://localhost:5050
 
-:: Wait then start bot
-timeout /t 2 /nobreak >NUL
-python run_bot.py
+python app.py

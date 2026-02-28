@@ -3,15 +3,15 @@
 # Run once: bash local_setup.sh
 
 set -e
-echo "🐰 Setting up Bunny Clip Tool locally..."
+echo "Setting up Bunny Clip Tool..."
 
 # Check Python
-python3 --version || { echo "❌ Python 3.11+ required. Install: brew install python@3.11"; exit 1; }
+python3 --version || { echo "Python 3.11+ required. Install: brew install python@3.11"; exit 1; }
 
 # Check FFmpeg
 ffmpeg -version > /dev/null 2>&1 || {
-  echo "📦 Installing FFmpeg..."
-  brew install ffmpeg || { echo "❌ Install Homebrew first: https://brew.sh"; exit 1; }
+  echo "Installing FFmpeg..."
+  brew install ffmpeg || { echo "Install Homebrew first: https://brew.sh"; exit 1; }
 }
 
 # Create venv
@@ -24,12 +24,11 @@ pip install -r requirements.txt
 
 # Create local temp folders
 mkdir -p tmp/uploads tmp/clips tmp/zips
-
-# Copy env if not exists
-[ -f .env ] || cp .env.example .env
+mkdir -p static/sounds
 
 echo ""
-echo "✅ Setup complete!"
+echo "Setup complete!"
 echo ""
-echo "Next: fill in your .env file, then run:"
-echo "  bash start.sh"
+echo "Optional: put MP3 files into static/sounds/ for background music."
+echo ""
+echo "To start: bash start.sh"

@@ -1,19 +1,15 @@
 #!/bin/bash
-# Starts both services in separate Terminal tabs
+# Bunny Clip Tool — Start (Mac)
 
-# Activate venv
 source venv/bin/activate
 
-echo "🐰 Starting Bunny Clip Tool..."
-echo "   Processor → http://localhost:8080"
-echo "   Bot       → polling Telegram"
 echo ""
-echo "Press Ctrl+C in each window to stop."
+echo "  Bunny Clip Tool starting..."
+echo "  Open http://localhost:5050 in your browser."
+echo "  Press Ctrl+C to stop."
 echo ""
 
-# Start processor in background
-osascript -e 'tell application "Terminal" to do script "cd '"$(pwd)"' && source venv/bin/activate && python main.py"'
+# Open browser automatically
+open http://localhost:5050 2>/dev/null &
 
-# Start bot in this window
-sleep 1
-python run_bot.py
+python app.py

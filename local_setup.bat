@@ -1,16 +1,16 @@
 @echo off
-echo 🐰 Setting up Bunny Clip Tool locally...
+echo Setting up Bunny Clip Tool...
 
 :: Check Python
 python --version 2>NUL || (
-  echo ❌ Python 3.11+ required.
+  echo Python 3.11+ required.
   echo Download: https://www.python.org/downloads/
   pause & exit /b 1
 )
 
 :: Check FFmpeg
 ffmpeg -version >NUL 2>&1 || (
-  echo 📦 FFmpeg not found.
+  echo FFmpeg not found.
   echo Install via: winget install Gyan.FFmpeg
   echo Or download: https://ffmpeg.org/download.html
   echo After installing, restart this script.
@@ -29,13 +29,12 @@ pip install -r requirements.txt
 if not exist tmp\uploads mkdir tmp\uploads
 if not exist tmp\clips mkdir tmp\clips
 if not exist tmp\zips mkdir tmp\zips
-
-:: Copy env if not exists
-if not exist .env copy .env.example .env
+if not exist static\sounds mkdir static\sounds
 
 echo.
-echo ✅ Setup complete!
+echo Setup complete!
 echo.
-echo Next: fill in your .env file, then run:
-echo   start.bat
+echo Optional: put MP3 files into static\sounds\ for background music.
+echo.
+echo To start: start.bat
 pause

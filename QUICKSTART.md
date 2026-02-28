@@ -1,14 +1,8 @@
 # Bunny Clip Tool — Local Quickstart
 
-## One-time setup (5 min)
+## One-time setup
 
-### Step 1 — Download your Google credentials
-1. Go to: https://console.cloud.google.com/iam-admin/serviceaccounts?project=bunny-clip-tool
-2. Click "bunny-clip-runner@..." → Keys → Add Key → JSON
-3. Rename the downloaded file to `service_account.json`
-4. Put it in this project folder (next to main.py)
-
-### Step 2 — Run setup
+### Step 1 — Run setup
 **Mac:**
 ```bash
 bash local_setup.sh
@@ -18,7 +12,12 @@ bash local_setup.sh
 double-click local_setup.bat
 ```
 
-### Step 3 — Start
+### Step 2 — Add sounds (optional)
+Put your MP3 files into the `static/sounds/` folder.
+If you don't add any, clips will have no background music.
+
+## Start the tool
+
 **Mac:**
 ```bash
 bash start.sh
@@ -28,10 +27,15 @@ bash start.sh
 double-click start.bat
 ```
 
-That's it. Two windows open. Bot is live. Send a video to Telegram.
+Your browser opens automatically at http://localhost:5050
 
-## How to stop
-Press `Ctrl+C` in both terminal windows.
+1. Type a creator name
+2. Upload a video
+3. Wait for processing
+4. Click "Download All Clips"
+
+## Stop
+Press `Ctrl+C` in the terminal window.
 
 ## Troubleshooting
 
@@ -39,11 +43,6 @@ Press `Ctrl+C` in both terminal windows.
 Mac: `brew install ffmpeg`
 Windows: `winget install Gyan.FFmpeg` then restart terminal
 
-**"service_account.json not found"**
-Download it from Google Cloud Console (Step 1 above)
-
-**Bot doesn't respond**
-Make sure both terminal windows are running (processor + bot)
-
-**"Sheets tab not found"**
-Run once: `python setup_sheets.py`
+**Processing is slow**
+Normal — each 7-second clip takes a few seconds to render.
+A 5-minute video = ~42 clips = ~5-10 minutes.
