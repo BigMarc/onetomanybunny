@@ -1,12 +1,12 @@
 """
-Bunny Clip Tool — Cloud Run Entry Point
-========================================
+Bunny Clip Tool — Local Processor Entry Point
+===============================================
 
 Accepts two input modes:
 
-Mode A — FROM TELEGRAM BOT:
+Mode A — FROM TELEGRAM BOT (local):
   POST /process
-  { "gcs_uri": "gs://bucket/uploads/JOB123/source_video.mp4",
+  { "local_path": "/abs/path/to/video.mp4",
     "job_id": "JOB123",
     "creator_name": "Sofia",
     "output_folder_id": "1abc..." }
@@ -16,18 +16,22 @@ Mode B — FROM APPS SCRIPT (Google Drive monitor):
   { "video_file_id": "1abc...",
     "creator_name": "Sofia" }
 
-Both modes produce the same output: clips in Drive + JSON response.
+Both modes produce the same output: clips in Drive + local ZIP + JSON response.
 """
 
 import os
 import uuid
 import logging
+import zipfile
 import tempfile
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from config.settings import (
     SHEETS_ID, SOUNDS_FOLDER_ID,
-    PROCESSED_FOLDER_ID, NOTIFICATION_EMAIL, GCS_BUCKET
+    PROCESSED_FOLDER_ID, NOTIFICATION_EMAIL
 )
 from processor.drive_handler import (
     download_file, get_random_sound, upload_clip,
@@ -43,6 +47,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Local temp directories
+LOCAL_ZIPS_DIR = os.environ.get("LOCAL_ZIPS_DIR", "./tmp/zips")
+os.makedirs(LOCAL_ZIPS_DIR, exist_ok=True)
 
 
 @app.route("/health", methods=["GET"])
@@ -61,28 +69,30 @@ def process():
     output_folder_id   = data.get("output_folder_id") or PROCESSED_FOLDER_ID
 
     # ── Determine input source ────────────────────────────────────────────────
-    gcs_uri        = data.get("gcs_uri")          # From Telegram bot
-    video_file_id  = data.get("video_file_id")    # From Apps Script
+    local_path     = data.get("local_path")        # From Telegram bot (local)
+    video_file_id  = data.get("video_file_id")      # From Apps Script
 
-    if not gcs_uri and not video_file_id:
-        return jsonify({"error": "Provide either gcs_uri or video_file_id"}), 400
+    if not local_path and not video_file_id:
+        return jsonify({"error": "Provide local_path or video_file_id"}), 400
 
-    logger.info(f"[{job_id}] Job started — creator={creator_name} source={'GCS' if gcs_uri else 'Drive'}")
+    logger.info(f"[{job_id}] Job started — creator={creator_name} source={'Local' if local_path else 'Drive'}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
 
-        # ── Download source video ─────────────────────────────────────────────
-        video_path = os.path.join(tmpdir, "source_video.mp4")
-        try:
-            if gcs_uri:
-                _download_from_gcs(gcs_uri, video_path)
-                logger.info(f"[{job_id}] Downloaded from GCS")
-            else:
+        # ── Get source video path ──────────────────────────────────────────────
+        if local_path:
+            if not os.path.exists(local_path):
+                return jsonify({"error": f"Local file not found: {local_path}"}), 400
+            video_path = local_path
+            logger.info(f"[{job_id}] Using local file: {video_path}")
+        else:
+            video_path = os.path.join(tmpdir, "source_video.mp4")
+            try:
                 download_file(video_file_id, video_path)
                 logger.info(f"[{job_id}] Downloaded from Drive")
-        except Exception as e:
-            logger.error(f"[{job_id}] Download failed: {e}")
-            return jsonify({"error": f"Download failed: {e}"}), 500
+            except Exception as e:
+                logger.error(f"[{job_id}] Download failed: {e}")
+                return jsonify({"error": f"Download failed: {e}"}), 500
 
         # ── Download random sound ─────────────────────────────────────────────
         sound_path = None
@@ -158,6 +168,20 @@ def process():
 
         logger.info(f"[{job_id}] ✅ {uploaded}/{clip_count} clips uploaded to {folder_link}")
 
+        # ── Build local ZIP ───────────────────────────────────────────────────
+        zip_path = os.path.join(LOCAL_ZIPS_DIR, f"{job_id}.zip")
+        zip_size_mb = 0
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for clip_path in clip_paths:
+                    if os.path.exists(clip_path):
+                        zf.write(clip_path, os.path.basename(clip_path))
+            zip_size_mb = round(os.path.getsize(zip_path) / (1024 * 1024), 1)
+            logger.info(f"[{job_id}] Local ZIP saved: {zip_path} ({zip_size_mb} MB)")
+        except Exception as e:
+            logger.warning(f"[{job_id}] Failed to build local ZIP: {e}")
+            zip_path = ""
+
         # ── Send email notification (if configured) ───────────────────────────
         if NOTIFICATION_EMAIL:
             try:
@@ -170,24 +194,12 @@ def process():
             "creator":         creator_name,
             "clips_processed": clip_count,
             "clips_uploaded":  uploaded,
-            "job_folder_id":   job_folder_id,  # Returned to bot for ZIP building
+            "job_folder_id":   job_folder_id,
             "folder_link":     folder_link,
+            "zip_path":        os.path.abspath(zip_path) if zip_path else "",
+            "zip_size_mb":     zip_size_mb,
             "errors":          result.get("errors", [])
         })
-
-
-def _download_from_gcs(gcs_uri: str, destination: str):
-    """Download a file from GCS given a gs:// URI."""
-    from google.cloud import storage as gcs_lib
-    from processor.gcp_auth import get_credentials
-    # Parse gs://bucket/path
-    path = gcs_uri.replace("gs://", "")
-    bucket_name, blob_name = path.split("/", 1)
-    creds = get_credentials(scopes=["https://www.googleapis.com/auth/devstorage.read_write"])
-    client = gcs_lib.Client(credentials=creds, project=creds.project_id)
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    blob.download_to_filename(destination)
 
 
 def _send_notification(creator_name: str, clip_count: int, folder_link: str, job_id: str):

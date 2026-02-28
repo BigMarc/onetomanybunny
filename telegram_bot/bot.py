@@ -1,14 +1,14 @@
 """
-🐰 Bunny Clip Tool — Telegram Bot
-==================================
+🐰 Bunny Clip Tool — Telegram Bot (Local Mode)
+================================================
 
 CREATOR FLOW:
   1. Creator sends a video to the bot
   2. Bot replies: "Got it! Processing ~42 clips. ETA: 15 min ⏳"
-  3. Bot downloads video → uploads to GCS → triggers Cloud Run
+  3. Bot downloads video → saves locally → calls local processor
   4. When done, bot sends:
-     - Google Drive folder link (always)
-     - ZIP download link (always)
+     - ZIP file directly in Telegram
+     - Google Drive folder link
 
 ADMIN COMMANDS (staff only):
   /register <creator_name> — register the next person who messages as a creator
@@ -19,27 +19,21 @@ ADMIN COMMANDS (staff only):
 CREATOR COMMANDS:
   /status — check your latest job status
   /help — show instructions
-
-⚠️  BOT TOKEN IS SENSITIVE — store in env var or Secret Manager, never in code.
-     Current token is in .env file only, loaded at startup.
 """
 
 import os
 import asyncio
 import logging
-import tempfile
 import uuid
 import httpx
-from pathlib import Path
 from datetime import datetime
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters
+    ContextTypes, filters
 )
 from telegram.constants import ParseMode
 
@@ -51,7 +45,6 @@ from telegram_bot.job_tracker import (
     create_job, update_job, get_job, get_pending_jobs,
     STATUS_DONE, STATUS_FAILED, STATUS_PROCESSING, STATUS_QUEUED
 )
-from telegram_bot.zip_builder import build_and_upload_zip
 
 # ── Config ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -60,10 +53,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "7137360439:AAF0tn-4I6qgn1YkNG4bUCD4z9N0DmK6UJs")
-CLOUD_RUN_URL      = os.environ.get("CLOUD_RUN_URL", "")           # Your Cloud Run /process URL
-GCS_BUCKET         = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
+BOT_TOKEN           = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CLOUD_RUN_URL       = os.environ.get("CLOUD_RUN_URL", "http://localhost:8080")
 PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
+LOCAL_UPLOAD_DIR     = os.environ.get("LOCAL_UPLOAD_DIR", "./tmp/uploads")
+LOCAL_ZIPS_DIR       = os.environ.get("LOCAL_ZIPS_DIR", "./tmp/zips")
+
+os.makedirs(LOCAL_UPLOAD_DIR, exist_ok=True)
+os.makedirs(LOCAL_ZIPS_DIR, exist_ok=True)
 
 # Pending registrations: maps admin Telegram ID → waiting to register next user
 _pending_registrations: dict[int, dict] = {}
@@ -72,65 +69,23 @@ _pending_registrations: dict[int, dict] = {}
 _active_jobs: dict[str, int] = {}
 
 
-def _get_id_token(target_audience: str) -> str | None:
-    """
-    Get an OIDC ID token for authenticating to Cloud Run services.
-    Works with: raw JSON env var, service account file, or metadata server (ADC).
-    """
-    import json
-    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-
-    # Case 1: Raw JSON in env var (Cloud Run --set-secrets)
-    if raw.startswith("{"):
-        from google.oauth2 import service_account as sa
-        from google.auth.transport.requests import Request
-        info = json.loads(raw)
-        creds = sa.IDTokenCredentials.from_service_account_info(
-            info, target_audience=target_audience
-        )
-        creds.refresh(Request())
-        return creds.token
-
-    # Case 2: File path to service account key
-    if raw and os.path.isfile(raw):
-        from google.oauth2 import service_account as sa
-        from google.auth.transport.requests import Request
-        creds = sa.IDTokenCredentials.from_service_account_file(
-            raw, target_audience=target_audience
-        )
-        creds.refresh(Request())
-        return creds.token
-
-    # Case 3: Metadata server (running on GCE/Cloud Run)
-    try:
-        from google.auth.transport.requests import Request
-        from google.oauth2 import id_token
-        return id_token.fetch_id_token(Request(), target_audience)
-    except Exception:
-        pass
-
-    return None
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _estimate_clips(file_size_bytes: int) -> int:
     """Rough estimate of clip count based on file size (assumes ~5-min video)."""
     mb = file_size_bytes / (1024 * 1024)
-    # Rough: 1 MB ≈ 0.5 seconds of 1080p footage → 5 min ≈ 300s → ~42 clips
-    duration_seconds = (mb / 150) * 60 * 5  # very rough
+    duration_seconds = (mb / 150) * 60 * 5
     clips = max(5, int(duration_seconds // 7))
-    return min(clips, 80)  # cap display at 80
+    return min(clips, 80)
 
 
 def _estimate_eta_minutes(file_size_bytes: int) -> int:
     """Estimate processing time in minutes."""
     mb = file_size_bytes / (1024 * 1024)
-    # ~3 min per 100 MB on Cloud Run with 2 CPUs
     return max(5, int((mb / 100) * 3) + 3)
 
 
-async def _upload_to_gcs_and_trigger(
+async def _process_locally(
     local_video_path: str,
     job_id: str,
     creator_name: str,
@@ -140,80 +95,40 @@ async def _upload_to_gcs_and_trigger(
 ):
     """
     Background task:
-    1. Upload video to GCS
-    2. Call Cloud Run /process
-    3. Build ZIP from results
-    4. Notify creator via Telegram
+    1. Call local processor via HTTP
+    2. Send ZIP file directly in Telegram
+    3. Send Drive folder link
     """
-    from google.cloud import storage as gcs
-    from telegram_bot.gcp_auth import get_credentials
-
     try:
-        # ── Step 1: Upload to GCS ─────────────────────────────────────────
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="📤 Uploading to processing server..."
-        )
-
-        creds = get_credentials(scopes=["https://www.googleapis.com/auth/devstorage.read_write"])
-        gcs_client = gcs.Client(credentials=creds, project=creds.project_id)
-        bucket = gcs_client.bucket(GCS_BUCKET)
-        blob_name = f"uploads/{job_id}/source_video.mp4"
-        blob = bucket.blob(blob_name)
-        blob.upload_from_filename(local_video_path)
-        gcs_uri = f"gs://{GCS_BUCKET}/{blob_name}"
-        logger.info(f"[{job_id}] Uploaded to GCS: {gcs_uri}")
-
-        update_job(job_id, STATUS_PROCESSING)
-
-        # ── Step 2: Trigger Cloud Run ─────────────────────────────────────
+        # ── Step 1: Trigger local processor ────────────────────────────────
         await context.bot.send_message(
             chat_id=chat_id,
             text="⚙️ Processing started! I'll message you when clips are ready."
         )
 
+        update_job(job_id, STATUS_PROCESSING)
+
         payload = {
-            "gcs_uri": gcs_uri,
+            "local_path": os.path.abspath(local_video_path),
             "job_id": job_id,
             "creator_name": creator_name,
             "output_folder_id": output_folder_id or PROCESSED_FOLDER_ID,
         }
 
-        # Get ID token for authenticated Cloud Run call
-        headers = {"Content-Type": "application/json"}
-        try:
-            id_token_creds = _get_id_token(CLOUD_RUN_URL)
-            if id_token_creds:
-                headers["Authorization"] = f"Bearer {id_token_creds}"
-        except Exception as e:
-            logger.warning(f"[{job_id}] Could not get ID token (proceeding without): {e}")
-
         async with httpx.AsyncClient(timeout=3600) as client:
             response = await client.post(
-                CLOUD_RUN_URL + "/process",
+                CLOUD_RUN_URL.rstrip("/") + "/process",
                 json=payload,
-                headers=headers
             )
 
         if response.status_code != 200:
-            raise Exception(f"Cloud Run returned {response.status_code}: {response.text}")
+            raise Exception(f"Processor returned {response.status_code}: {response.text}")
 
         result = response.json()
-        job_folder_id = result.get("job_folder_id", "")
         clip_count    = result.get("clips_processed", 0)
         folder_link   = result.get("folder_link", "")
-
-        # ── Step 3: Build ZIP ─────────────────────────────────────────────
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"✅ {clip_count} clips processed! Building ZIP download... 📦"
-        )
-
-        zip_result = build_and_upload_zip(
-            job_folder_id=job_folder_id,
-            creator_name=creator_name,
-            job_id=job_id
-        )
+        zip_path      = result.get("zip_path", "")
+        zip_size_mb   = result.get("zip_size_mb", 0)
 
         update_job(
             job_id=job_id,
@@ -222,36 +137,51 @@ async def _upload_to_gcs_and_trigger(
             folder_link=folder_link
         )
 
-        # ── Step 4: Notify creator ─────────────────────────────────────────
-        zip_link    = zip_result.get("zip_drive_link", "")
-        zip_size_mb = zip_result.get("zip_size_mb", 0)
-        drive_link  = zip_result.get("folder_link", folder_link)
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📦 Download ZIP", url=zip_link)],
-            [InlineKeyboardButton("📁 Open Drive Folder", url=drive_link)],
-        ])
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboard,
-            text=(
-                f"🎉 *Your clips are ready!*\n\n"
-                f"🎬 *{clip_count} clips* processed\n"
-                f"📦 ZIP size: {zip_size_mb} MB\n"
-                f"👤 Creator: {creator_name}\n"
-                f"🔖 Job ID: `{job_id}`\n\n"
-                f"Choose below to download ZIP or open the Drive folder:"
+        # ── Step 2: Send ZIP directly via Telegram ─────────────────────────
+        if zip_path and os.path.exists(zip_path):
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ {clip_count} clips processed! Sending ZIP... 📦"
             )
-        )
+
+            with open(zip_path, "rb") as zf:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=zf,
+                    filename=f"{creator_name}_clips_{job_id}.zip",
+                    caption=f"🎬 {clip_count} clips ready!"
+                )
+        else:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ {clip_count} clips processed! (ZIP not available locally)"
+            )
+
+        # ── Step 3: Send Drive folder link ─────────────────────────────────
+        if folder_link:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📁 Open Drive Folder", url=folder_link)],
+            ])
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard,
+                text=(
+                    f"🎉 *Your clips are ready!*\n\n"
+                    f"🎬 *{clip_count} clips* processed\n"
+                    f"📦 ZIP size: {zip_size_mb} MB\n"
+                    f"👤 Creator: {creator_name}\n"
+                    f"🔖 Job ID: `{job_id}`\n\n"
+                    f"Clips are also in your Google Drive folder:"
+                )
+            )
 
         logger.info(f"[{job_id}] ✅ All done. Notified {chat_id}")
 
     except Exception as e:
         logger.error(f"[{job_id}] Background task failed: {e}", exc_info=True)
         update_job(job_id, STATUS_FAILED)
-        # Truncate error and strip characters that break Telegram Markdown
         safe_error = str(e)[:200].replace("`", "").replace("*", "").replace("_", "").replace("[", "").replace("]", "")
         try:
             await context.bot.send_message(
@@ -265,7 +195,6 @@ async def _upload_to_gcs_and_trigger(
                 parse_mode=ParseMode.MARKDOWN
             )
         except Exception:
-            # Fallback: send without any formatting
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=(
@@ -275,12 +204,6 @@ async def _upload_to_gcs_and_trigger(
                     f"Please contact your manager and share this Job ID."
                 )
             )
-    finally:
-        # Clean up the temp directory created in handle_video
-        import shutil
-        tmpdir = os.path.dirname(local_video_path)
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        logger.info(f"[{job_id}] Cleaned up temp dir {tmpdir}")
 
 
 # ── Command Handlers ──────────────────────────────────────────────────────────
@@ -311,7 +234,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1️⃣ Film your 5-minute dance video (horizontal!)\n"
         "2️⃣ Send the video directly here in this chat\n"
         "3️⃣ I'll confirm receipt and give you an ETA\n"
-        "4️⃣ When done, you get a ZIP download + Drive folder link\n\n"
+        "4️⃣ When done, you get a ZIP file + Drive folder link\n\n"
         "⚠️ *Important:*\n"
         "• Film horizontal (landscape)\n"
         "• No background music playing in the room\n"
@@ -327,14 +250,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if args and is_admin(user.id):
-        # Admin checking a specific job ID
         job = get_job(args[0])
         if not job:
             await update.message.reply_text(f"❌ Job `{args[0]}` not found.", parse_mode=ParseMode.MARKDOWN)
             return
     else:
-        # Creator checking their own latest job
-        # Find the most recent job for this chat_id in the Jobs sheet
         pending = get_pending_jobs()
         my_jobs = [j for j in pending if j.get("telegram_chat_id") == user.id]
         if not my_jobs:
@@ -474,14 +394,12 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
 
     # ── Check registration ────────────────────────────────────────────────────
-    # If an admin is waiting to register someone, register whoever messages next
     for admin_id, reg_data in list(_pending_registrations.items()):
         creator_name = reg_data["creator_name"]
         logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' via video (initiated by admin {admin_id})")
         success, err = register_creator(user.id, creator_name)
         if success:
             del _pending_registrations[admin_id]
-            # Notify admin (even if admin registered themselves)
             await context.bot.send_message(
                 chat_id=admin_id,
                 text=f"✅ Registered {user.first_name} as *{creator_name}* (ID: `{user.id}`)",
@@ -517,8 +435,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_size = video.file_size or 0
     file_size_mb = file_size / (1024 * 1024)
 
-    # Telegram bot limit: 20MB for getFile, 50MB for documents sent directly
-    # For large files, we need the Telegram file ID and use a different approach
     if file_size_mb > 2000:
         await message.reply_text(
             "❌ File too large (max 2 GB).\n"
@@ -550,7 +466,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN
     )
 
-    # ── Download video ────────────────────────────────────────────────────────
+    # ── Download video to local folder ────────────────────────────────────────
     try:
         tg_file = await context.bot.get_file(video.file_id)
     except Exception as e:
@@ -561,11 +477,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"get_file failed: {e}")
         return
 
-    # Use a persistent temp dir (not context-managed) so the background task
-    # can access the file after this handler returns. The background task
-    # cleans up when done.
-    tmpdir = tempfile.mkdtemp(prefix=f"bunny_{job_id}_")
-    local_path = os.path.join(tmpdir, f"{job_id}_source.mp4")
+    local_path = os.path.join(LOCAL_UPLOAD_DIR, f"{job_id}_source.mp4")
     try:
         await tg_file.download_to_drive(local_path)
         logger.info(f"[{job_id}] Downloaded to {local_path} ({file_size_mb:.0f} MB)")
@@ -574,13 +486,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text(
             "❌ Failed to download your video. Please try again."
         )
-        import shutil
-        shutil.rmtree(tmpdir, ignore_errors=True)
         return
 
     # Kick off background processing
     asyncio.create_task(
-        _upload_to_gcs_and_trigger(
+        _process_locally(
             local_video_path=local_path,
             job_id=job_id,
             creator_name=creator["name"],
@@ -596,14 +506,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
 
-    # Complete pending registration — register the NEXT person who messages
+    # Complete pending registration
     for admin_id, reg_data in list(_pending_registrations.items()):
         creator_name = reg_data["creator_name"]
         logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' (initiated by admin {admin_id})")
         success, err = register_creator(user.id, creator_name)
         if success:
             del _pending_registrations[admin_id]
-            # Notify the admin (even if admin registered themselves)
             await context.bot.send_message(
                 chat_id=admin_id,
                 text=f"✅ Registered {user.first_name} as *{creator_name}*",
@@ -635,29 +544,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ── Health Check Server (for Cloud Run) ──────────────────────────────────────
-
-def _start_health_server():
-    """Start a minimal HTTP server so Cloud Run's startup probe succeeds."""
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"ok")
-
-        def log_message(self, *args):
-            pass  # suppress request logs
-
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), _Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logger.info(f"Health-check server listening on port {port}")
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -665,12 +551,10 @@ def main():
     if not BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
     if not CLOUD_RUN_URL:
-        raise RuntimeError("CLOUD_RUN_URL not set")
+        raise RuntimeError("CLOUD_RUN_URL not set (default: http://localhost:8080)")
 
-    # Cloud Run requires the container to listen on PORT for health checks
-    _start_health_server()
-
-    logger.info("Starting Bunny Clip Bot...")
+    logger.info("Starting Bunny Clip Bot (local mode)...")
+    logger.info(f"Processor URL: {CLOUD_RUN_URL}")
 
     app = (
         Application.builder()
