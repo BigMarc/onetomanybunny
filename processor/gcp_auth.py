@@ -41,7 +41,14 @@ def get_credentials(scopes: list[str]):
         )
     else:
         # Fallback: Application Default Credentials (Cloud Shell, GCE, etc.)
+        # Temporarily unset GOOGLE_APPLICATION_CREDENTIALS so ADC doesn't
+        # pick up the same bad key file.
         import google.auth
-        creds, _project = google.auth.default(scopes=scopes)
+        saved = os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        try:
+            creds, _project = google.auth.default(scopes=scopes)
+        finally:
+            if saved is not None:
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = saved
         logger.info("Using Application Default Credentials (project: %s)", _project)
         return creds

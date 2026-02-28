@@ -29,6 +29,21 @@ if not SHEETS_ID:
     raise RuntimeError("SHEETS_ID env var is not set. Set it in .env or export it.")
 
 
+def _try_adc(scopes):
+    """Fallback: Application Default Credentials (Cloud Shell, GCE, etc.)."""
+    import google.auth
+    # Temporarily unset GOOGLE_APPLICATION_CREDENTIALS so google.auth.default()
+    # doesn't pick up the same bad key file — it should use Cloud Shell's own creds.
+    saved = os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+    try:
+        creds, _project = google.auth.default(scopes=scopes)
+    finally:
+        if saved is not None:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = saved
+    print(f"  Using Application Default Credentials (project: {_project})")
+    return creds
+
+
 def get_service():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
@@ -39,13 +54,18 @@ def get_service():
         info = json.loads(stripped)
         creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
     elif stripped and os.path.isfile(stripped):
-        # File path to service account key
-        creds = service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
+        # File path to service account key — try it, fall back to ADC if key is invalid
+        try:
+            creds = service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
+            # Eagerly test the credentials so a bad key fails here, not later
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
+        except Exception as e:
+            print(f"  Warning: service account key '{stripped}' failed: {e}")
+            print(f"  Falling back to Application Default Credentials...")
+            creds = _try_adc(scopes)
     else:
-        # Fallback: Application Default Credentials (works in Cloud Shell, GCE, etc.)
-        import google.auth
-        creds, _project = google.auth.default(scopes=scopes)
-        print("  Using Application Default Credentials (ADC)")
+        creds = _try_adc(scopes)
     return build("sheets", "v4", credentials=creds)
 
 
