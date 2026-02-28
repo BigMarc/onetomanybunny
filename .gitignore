@@ -19,10 +19,8 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Outputs
-static/uploads/
-static/outputs/
-static/sounds/
+# Sound files (add your licensed .mp3 files locally)
+sounds/*.mp3
 
 # Temp
 *.tmp
