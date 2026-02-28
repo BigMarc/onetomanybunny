@@ -131,12 +131,16 @@ echo "[6/7] Deploying bot (this takes 2-4 min)..."
 
 cp Dockerfile.bot Dockerfile
 
+# Try to get existing service URL (empty on first deploy)
+BOT_URL=$(gcloud run services describe bunny-clip-bot \
+  --region $REGION --format "value(status.url)" 2>/dev/null) || BOT_URL="https://placeholder.invalid"
+
 gcloud run deploy bunny-clip-bot \
   --source . \
   --platform managed \
   --region $REGION \
   --service-account $SA_EMAIL \
-  --set-env-vars "PROCESSOR_URL=${PROCESSOR_URL},GCS_BUCKET=${BUCKET}" \
+  --set-env-vars "PROCESSOR_URL=${PROCESSOR_URL},GCS_BUCKET=${BUCKET},BOT_URL=${BOT_URL}" \
   --set-secrets "TELEGRAM_BOT_TOKEN=telegram-bot-token:latest" \
   --memory 1Gi \
   --cpu 1 \
@@ -148,9 +152,19 @@ gcloud run deploy bunny-clip-bot \
 
 rm -f Dockerfile
 
-BOT_URL=$(gcloud run services describe bunny-clip-bot \
+# Get the actual URL and update if it changed (e.g. first deploy)
+ACTUAL_BOT_URL=$(gcloud run services describe bunny-clip-bot \
   --region $REGION --format "value(status.url)")
 
+if [ "$BOT_URL" != "$ACTUAL_BOT_URL" ]; then
+  echo "  Setting webhook URL: ${ACTUAL_BOT_URL}"
+  gcloud run services update bunny-clip-bot \
+    --region $REGION \
+    --update-env-vars "BOT_URL=${ACTUAL_BOT_URL}" \
+    --quiet
+fi
+
+BOT_URL="$ACTUAL_BOT_URL"
 echo "  ${BOT_URL}"
 
 # ── 7. Clean up old revisions ────────────────────────────────

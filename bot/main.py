@@ -19,6 +19,7 @@ import os
 import uuid
 import asyncio
 import logging
+import secrets
 import tempfile
 import shutil
 
@@ -45,6 +46,7 @@ logging.basicConfig(
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 PROCESSOR_URL = os.environ.get("PROCESSOR_URL", "")
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
+BOT_URL = os.environ.get("BOT_URL", "")
 
 # GCS client — lazy-initialized so the module can import without credentials
 _gcs_client = None
@@ -200,8 +202,27 @@ def main():
         MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video)
     )
 
-    logger.info("Bot starting (polling mode)...")
-    app.run_polling(drop_pending_updates=True)
+    if BOT_URL:
+        # Webhook mode — for Cloud Run
+        port = int(os.environ.get("PORT", 8080))
+        webhook_secret = secrets.token_hex(32)
+        webhook_url = f"{BOT_URL}/webhook"
+
+        logger.info(f"Bot starting (webhook mode) on port {port}...")
+        logger.info(f"Webhook URL: {webhook_url}")
+
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="/webhook",
+            webhook_url=webhook_url,
+            secret_token=webhook_secret,
+            drop_pending_updates=True,
+        )
+    else:
+        # Polling mode — for local development
+        logger.info("Bot starting (polling mode)...")
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
