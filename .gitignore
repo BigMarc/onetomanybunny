@@ -22,6 +22,9 @@ Thumbs.db
 # Sound files (add your licensed .mp3 files locally)
 sounds/*.mp3
 
+# Temp Dockerfile created by deploy.sh (gets cleaned up automatically)
+Dockerfile
+
 # Temp
 *.tmp
 *.log
