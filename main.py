@@ -179,10 +179,12 @@ def process():
 def _download_from_gcs(gcs_uri: str, destination: str):
     """Download a file from GCS given a gs:// URI."""
     from google.cloud import storage as gcs_lib
+    from processor.gcp_auth import get_credentials
     # Parse gs://bucket/path
     path = gcs_uri.replace("gs://", "")
     bucket_name, blob_name = path.split("/", 1)
-    client = gcs_lib.Client()
+    creds = get_credentials(scopes=["https://www.googleapis.com/auth/devstorage.read_write"])
+    client = gcs_lib.Client(credentials=creds, project=creds.project_id)
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
     blob.download_to_filename(destination)

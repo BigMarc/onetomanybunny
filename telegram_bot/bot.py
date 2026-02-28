@@ -251,16 +251,30 @@ async def _upload_to_gcs_and_trigger(
     except Exception as e:
         logger.error(f"[{job_id}] Background task failed: {e}", exc_info=True)
         update_job(job_id, STATUS_FAILED)
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"❌ Something went wrong processing your video.\n\n"
-                f"Job ID: `{job_id}`\n"
-                f"Error: {str(e)[:200]}\n\n"
-                f"Please contact your manager and share this Job ID."
-            ),
-            parse_mode=ParseMode.MARKDOWN
-        )
+        # Truncate error and strip characters that break Telegram Markdown
+        safe_error = str(e)[:200].replace("`", "").replace("*", "").replace("_", "").replace("[", "").replace("]", "")
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"❌ Something went wrong processing your video.\n\n"
+                    f"Job ID: `{job_id}`\n"
+                    f"Error: {safe_error}\n\n"
+                    f"Please contact your manager and share this Job ID."
+                ),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception:
+            # Fallback: send without any formatting
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"❌ Something went wrong processing your video.\n\n"
+                    f"Job ID: {job_id}\n"
+                    f"Error: {safe_error}\n\n"
+                    f"Please contact your manager and share this Job ID."
+                )
+            )
     finally:
         # Clean up the temp directory created in handle_video
         import shutil
