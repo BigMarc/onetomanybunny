@@ -121,6 +121,10 @@ export CLOUD_RUN_URL=$PROCESSOR_URL
 echo ""
 echo "🤖 Deploying Telegram Bot service..."
 
+# Get existing bot URL for webhook (empty on first deploy)
+BOT_WEBHOOK_URL=$(gcloud run services describe bunny-clip-bot \
+  --region $REGION --format "value(status.url)" --quiet 2>/dev/null || echo "")
+
 # Swap Dockerfile.bot → Dockerfile so --source picks it up
 mv Dockerfile Dockerfile.processor
 cp Dockerfile.bot Dockerfile
@@ -132,6 +136,7 @@ gcloud run deploy bunny-clip-bot \
   --service-account $SA_EMAIL \
   --set-env-vars "\
 CLOUD_RUN_URL=${PROCESSOR_URL},\
+WEBHOOK_URL=${BOT_WEBHOOK_URL},\
 GCS_BUCKET=${GCS_BUCKET},\
 SHEETS_ID=${SHEETS_ID},\
 PROCESSED_FOLDER_ID=${PROCESSED_FOLDER_ID},\
@@ -148,6 +153,7 @@ GOOGLE_APPLICATION_CREDENTIALS=service-account-key:latest" \
   --timeout 3600 \
   --min-instances 1 \
   --max-instances 1 \
+  --no-cpu-throttling \
   --allow-unauthenticated \
   --quiet
 
@@ -157,6 +163,16 @@ mv Dockerfile.processor Dockerfile
 BOT_URL=$(gcloud run services describe bunny-clip-bot \
   --region $REGION --format "value(status.url)" --quiet)
 echo "   ✅ Bot URL: $BOT_URL"
+
+# First deploy: WEBHOOK_URL was empty — update it now and restart
+if [ -n "$BOT_URL" ] && [ "$BOT_WEBHOOK_URL" != "$BOT_URL" ]; then
+  echo "   🔄 First deploy detected — setting WEBHOOK_URL..."
+  gcloud run services update bunny-clip-bot \
+    --region $REGION \
+    --update-env-vars "WEBHOOK_URL=${BOT_URL}" \
+    --quiet
+  echo "   ✅ WEBHOOK_URL set to $BOT_URL"
+fi
 
 # ── Done ──────────────────────────────────────────────────────
 echo ""

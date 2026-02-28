@@ -62,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CLOUD_RUN_URL      = os.environ.get("CLOUD_RUN_URL", "")           # Your Cloud Run /process URL
+WEBHOOK_URL        = os.environ.get("WEBHOOK_URL", "")             # Bot's own public URL (enables webhook mode)
 GCS_BUCKET         = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
 PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
 
@@ -667,9 +668,6 @@ def main():
     if not CLOUD_RUN_URL:
         raise RuntimeError("CLOUD_RUN_URL not set")
 
-    # Cloud Run requires the container to listen on PORT for health checks
-    _start_health_server()
-
     logger.info("Starting Bunny Clip Bot...")
 
     app = (
@@ -692,8 +690,28 @@ def main():
     # Text fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("Bot is running. Press Ctrl+C to stop.")
-    app.run_polling(drop_pending_updates=True)
+    port = int(os.environ.get("PORT", 8080))
+
+    if WEBHOOK_URL:
+        # Webhook mode — for Cloud Run deployment.
+        # Telegram pushes updates via HTTP POST; no getUpdates polling,
+        # so multiple revisions during rolling deploys don't conflict.
+        import hashlib
+        secret_token = hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:32]
+        logger.info("Starting in WEBHOOK mode → %s/webhook", WEBHOOK_URL)
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="webhook",
+            webhook_url=f"{WEBHOOK_URL}/webhook",
+            secret_token=secret_token,
+            drop_pending_updates=True,
+        )
+    else:
+        # Polling mode — for local development only.
+        _start_health_server()
+        logger.info("Starting in POLLING mode (local dev)")
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
