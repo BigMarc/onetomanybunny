@@ -42,13 +42,21 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-PROCESSOR_URL = os.environ["PROCESSOR_URL"]  # e.g. https://bunny-clip-processor-xxx.run.app
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+PROCESSOR_URL = os.environ.get("PROCESSOR_URL", "")
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
 
-# GCS client — uses Cloud Run's built-in service account, no key file needed
-gcs_client = gcs.Client()
-bucket = gcs_client.bucket(GCS_BUCKET)
+# GCS client — lazy-initialized so the module can import without credentials
+_gcs_client = None
+_bucket = None
+
+
+def _get_bucket():
+    global _gcs_client, _bucket
+    if _bucket is None:
+        _gcs_client = gcs.Client()
+        _bucket = _gcs_client.bucket(GCS_BUCKET)
+    return _bucket
 
 
 def generate_job_id() -> str:
@@ -101,7 +109,7 @@ async def _process_video(update, context, video, job_id, chat_id):
 
         # 2. Upload to GCS
         gcs_key = f"uploads/{job_id}/source_video.mp4"
-        blob = bucket.blob(gcs_key)
+        blob = _get_bucket().blob(gcs_key)
         blob.upload_from_filename(source_path)
         gcs_uri = f"gs://{GCS_BUCKET}/{gcs_key}"
         logger.info(f"[{job_id}] Uploaded to GCS: {gcs_uri}")
@@ -139,7 +147,7 @@ async def _process_video(update, context, video, job_id, chat_id):
         # 4. Download ZIP from GCS
         zip_path = os.path.join(tmp_dir, f"{job_id}_clips.zip")
         zip_blob_key = zip_gcs_uri.replace(f"gs://{GCS_BUCKET}/", "")
-        bucket.blob(zip_blob_key).download_to_filename(zip_path)
+        _get_bucket().blob(zip_blob_key).download_to_filename(zip_path)
         logger.info(
             f"[{job_id}] Downloaded ZIP ({os.path.getsize(zip_path) / (1024 * 1024):.1f} MB)"
         )
@@ -181,6 +189,11 @@ def _get_id_token(target_url: str) -> str:
 
 
 def main():
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN env var is required")
+    if not PROCESSOR_URL:
+        raise RuntimeError("PROCESSOR_URL env var is required")
+
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(

@@ -40,9 +40,24 @@ GCS_BUCKET = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
 CLIP_DURATION = 7  # seconds
 TARGET_CLIPS = 5
 
-# GCS client — uses Cloud Run's built-in service account, no key file needed
-gcs_client = gcs.Client()
-bucket = gcs_client.bucket(GCS_BUCKET)
+# GCS client — lazy-initialized so the module can import without credentials
+_gcs_client = None
+_bucket = None
+
+
+def _get_bucket():
+    global _gcs_client, _bucket
+    if _bucket is None:
+        _gcs_client = gcs.Client()
+        _bucket = _gcs_client.bucket(GCS_BUCKET)
+    return _bucket
+
+
+def _get_gcs_client():
+    global _gcs_client
+    if _gcs_client is None:
+        _gcs_client = gcs.Client()
+    return _gcs_client
 
 
 @app.route("/health", methods=["GET"])
@@ -106,7 +121,7 @@ def process_video():
 
         # 6. Upload ZIP to GCS
         zip_gcs_key = f"results/{job_id}/clips.zip"
-        bucket.blob(zip_gcs_key).upload_from_filename(zip_path)
+        _get_bucket().blob(zip_gcs_key).upload_from_filename(zip_path)
         zip_gcs_uri = f"gs://{GCS_BUCKET}/{zip_gcs_key}"
         logger.info(f"[{job_id}] Uploaded ZIP to {zip_gcs_uri}")
 
@@ -131,5 +146,5 @@ def _download_from_gcs(gcs_uri: str, destination: str):
     """Download a file from GCS. No credentials needed — uses Cloud Run service account."""
     path = gcs_uri.replace("gs://", "")
     bucket_name, blob_name = path.split("/", 1)
-    b = gcs_client.bucket(bucket_name)
+    b = _get_gcs_client().bucket(bucket_name)
     b.blob(blob_name).download_to_filename(destination)
