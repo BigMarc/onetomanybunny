@@ -147,6 +147,7 @@ GOOGLE_APPLICATION_CREDENTIALS=service-account-key:latest" \
   --cpu 1 \
   --timeout 3600 \
   --min-instances 1 \
+  --max-instances 1 \
   --allow-unauthenticated \
   --quiet
 

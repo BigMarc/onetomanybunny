@@ -60,7 +60,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "7137360439:AAF0tn-4I6qgn1YkNG4bUCD4z9N0DmK6UJs")
+BOT_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CLOUD_RUN_URL      = os.environ.get("CLOUD_RUN_URL", "")           # Your Cloud Run /process URL
 GCS_BUCKET         = os.environ.get("GCS_BUCKET", "bunny-clip-tool-videos")
 PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
