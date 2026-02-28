@@ -30,17 +30,22 @@ if not SHEETS_ID:
 
 
 def get_service():
-    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
     stripped = raw.strip()
+
     if stripped.startswith("{"):
+        # Raw JSON content (Cloud Run --set-secrets)
         info = json.loads(stripped)
-        creds = service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
+        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    elif stripped and os.path.isfile(stripped):
+        # File path to service account key
+        creds = service_account.Credentials.from_service_account_file(stripped, scopes=scopes)
     else:
-        creds = service_account.Credentials.from_service_account_file(
-            stripped, scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
+        # Fallback: Application Default Credentials (works in Cloud Shell, GCE, etc.)
+        import google.auth
+        creds, _project = google.auth.default(scopes=scopes)
+        print("  Using Application Default Credentials (ADC)")
     return build("sheets", "v4", credentials=creds)
 
 

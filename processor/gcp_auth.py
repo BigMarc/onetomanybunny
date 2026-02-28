@@ -17,25 +17,31 @@ logger = logging.getLogger(__name__)
 _cached_info: dict | None = None
 
 
-def get_credentials(scopes: list[str]) -> service_account.Credentials:
+def get_credentials(scopes: list[str]):
     """
-    Build Google service account credentials.
-    Supports both file path and raw JSON string in GOOGLE_APPLICATION_CREDENTIALS.
+    Build Google credentials.
+    Supports: raw JSON env var, file path, or Application Default Credentials (ADC).
     """
     global _cached_info
-    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
 
     stripped = raw.strip()
     if stripped.startswith("{"):
-        # It's raw JSON content — parse and use from_service_account_info
+        # Raw JSON content (Cloud Run --set-secrets)
         if _cached_info is None:
             _cached_info = json.loads(stripped)
             logger.info("Parsed credentials from JSON env var (project: %s)", _cached_info.get("project_id", "?"))
         return service_account.Credentials.from_service_account_info(
             _cached_info, scopes=scopes
         )
-    else:
-        # It's a file path — use directly
+    elif stripped and os.path.isfile(stripped):
+        # File path to service account key
         return service_account.Credentials.from_service_account_file(
             stripped, scopes=scopes
         )
+    else:
+        # Fallback: Application Default Credentials (Cloud Shell, GCE, etc.)
+        import google.auth
+        creds, _project = google.auth.default(scopes=scopes)
+        logger.info("Using Application Default Credentials (project: %s)", _project)
+        return creds
