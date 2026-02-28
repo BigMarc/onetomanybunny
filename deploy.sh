@@ -131,9 +131,9 @@ echo "[6/7] Deploying bot (this takes 2-4 min)..."
 
 cp Dockerfile.bot Dockerfile
 
-# Try to get existing service URL (empty on first deploy)
+# Get existing service URL (empty on first deploy — bot starts in standby mode)
 BOT_URL=$(gcloud run services describe bunny-clip-bot \
-  --region $REGION --format "value(status.url)" 2>/dev/null) || BOT_URL="https://placeholder.invalid"
+  --region $REGION --format "value(status.url)" 2>/dev/null) || BOT_URL=""
 
 gcloud run deploy bunny-clip-bot \
   --source . \
@@ -152,7 +152,9 @@ gcloud run deploy bunny-clip-bot \
 
 rm -f Dockerfile
 
-# Get the actual URL and update if it changed (e.g. first deploy)
+# Get the actual URL and update the service so the bot enters webhook mode.
+# On first deploy BOT_URL was empty (standby); this update triggers a new
+# revision with the real URL.  On re-deploys it's a no-op if unchanged.
 ACTUAL_BOT_URL=$(gcloud run services describe bunny-clip-bot \
   --region $REGION --format "value(status.url)")
 

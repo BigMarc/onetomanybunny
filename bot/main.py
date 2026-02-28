@@ -190,7 +190,36 @@ def _get_id_token(target_url: str) -> str:
     return token
 
 
+def _run_standby_server(port: int):
+    """Minimal HTTP server so Cloud Run health checks pass on first deploy
+    (before BOT_URL is known).  The deploy script will update the env var
+    with the real URL, triggering a new revision in webhook mode."""
+    import http.server
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.HTTPServer(("0.0.0.0", port), _Handler)
+    logger.info(f"Standby mode: listening on :{port} (waiting for BOT_URL)")
+    server.serve_forever()
+
+
 def main():
+    port = int(os.environ.get("PORT", 8080))
+
+    if not BOT_URL:
+        # First deploy — BOT_URL not yet known.
+        # Start health-check-only server so the deploy succeeds.
+        logger.info("No BOT_URL set — entering standby mode.")
+        _run_standby_server(port)
+        return
+
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN env var is required")
     if not PROCESSOR_URL:
@@ -202,27 +231,21 @@ def main():
         MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video)
     )
 
-    if BOT_URL:
-        # Webhook mode — for Cloud Run
-        port = int(os.environ.get("PORT", 8080))
-        webhook_secret = secrets.token_hex(32)
-        webhook_url = f"{BOT_URL}/webhook"
+    # Webhook mode — for Cloud Run
+    webhook_secret = secrets.token_hex(32)
+    webhook_url = f"{BOT_URL}/webhook"
 
-        logger.info(f"Bot starting (webhook mode) on port {port}...")
-        logger.info(f"Webhook URL: {webhook_url}")
+    logger.info(f"Bot starting (webhook mode) on port {port}...")
+    logger.info(f"Webhook URL: {webhook_url}")
 
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path="/webhook",
-            webhook_url=webhook_url,
-            secret_token=webhook_secret,
-            drop_pending_updates=True,
-        )
-    else:
-        # Polling mode — for local development
-        logger.info("Bot starting (polling mode)...")
-        app.run_polling(drop_pending_updates=True)
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path="/webhook",
+        webhook_url=webhook_url,
+        secret_token=webhook_secret,
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
