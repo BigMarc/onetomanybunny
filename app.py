@@ -50,7 +50,7 @@ def load_config() -> dict:
         return json.load(f)
 
 
-def _find_local_sound() -> str | None:
+def _find_local_sound():
     """Pick a random MP3 from the static/sounds/ folder, if any exist."""
     sounds = list(SOUNDS_FOLDER.glob("*.mp3")) + list(SOUNDS_FOLDER.glob("*.wav"))
     if sounds:
