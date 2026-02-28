@@ -72,6 +72,46 @@ _pending_registrations: dict[int, dict] = {}
 _active_jobs: dict[str, int] = {}
 
 
+def _get_id_token(target_audience: str) -> str | None:
+    """
+    Get an OIDC ID token for authenticating to Cloud Run services.
+    Works with: raw JSON env var, service account file, or metadata server (ADC).
+    """
+    import json
+    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+
+    # Case 1: Raw JSON in env var (Cloud Run --set-secrets)
+    if raw.startswith("{"):
+        from google.oauth2 import service_account as sa
+        from google.auth.transport.requests import Request
+        info = json.loads(raw)
+        creds = sa.IDTokenCredentials.from_service_account_info(
+            info, target_audience=target_audience
+        )
+        creds.refresh(Request())
+        return creds.token
+
+    # Case 2: File path to service account key
+    if raw and os.path.isfile(raw):
+        from google.oauth2 import service_account as sa
+        from google.auth.transport.requests import Request
+        creds = sa.IDTokenCredentials.from_service_account_file(
+            raw, target_audience=target_audience
+        )
+        creds.refresh(Request())
+        return creds.token
+
+    # Case 3: Metadata server (running on GCE/Cloud Run)
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2 import id_token
+        return id_token.fetch_id_token(Request(), target_audience)
+    except Exception:
+        pass
+
+    return None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _estimate_clips(file_size_bytes: int) -> int:
@@ -106,6 +146,7 @@ async def _upload_to_gcs_and_trigger(
     4. Notify creator via Telegram
     """
     from google.cloud import storage as gcs
+    from telegram_bot.gcp_auth import get_credentials
 
     try:
         # ── Step 1: Upload to GCS ─────────────────────────────────────────
@@ -114,7 +155,8 @@ async def _upload_to_gcs_and_trigger(
             text="📤 Uploading to processing server..."
         )
 
-        gcs_client = gcs.Client()
+        creds = get_credentials(scopes=["https://www.googleapis.com/auth/devstorage.read_write"])
+        gcs_client = gcs.Client(credentials=creds, project=creds.project_id)
         bucket = gcs_client.bucket(GCS_BUCKET)
         blob_name = f"uploads/{job_id}/source_video.mp4"
         blob = bucket.blob(blob_name)
@@ -137,11 +179,20 @@ async def _upload_to_gcs_and_trigger(
             "output_folder_id": output_folder_id or PROCESSED_FOLDER_ID,
         }
 
+        # Get ID token for authenticated Cloud Run call
+        headers = {"Content-Type": "application/json"}
+        try:
+            id_token_creds = _get_id_token(CLOUD_RUN_URL)
+            if id_token_creds:
+                headers["Authorization"] = f"Bearer {id_token_creds}"
+        except Exception as e:
+            logger.warning(f"[{job_id}] Could not get ID token (proceeding without): {e}")
+
         async with httpx.AsyncClient(timeout=3600) as client:
             response = await client.post(
                 CLOUD_RUN_URL + "/process",
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
 
         if response.status_code != 200:
