@@ -1,0 +1,20 @@
+# .gcloudignore — controls what gets uploaded to Cloud Build
+# This overrides .gitignore for gcloud run deploy --source
+
+.git
+.gitignore
+.gcloudignore
+.env
+service_account.json
+
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+.vscode/
+.idea/
+.DS_Store
+
+*.tmp
+*.log
