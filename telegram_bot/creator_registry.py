@@ -3,7 +3,9 @@ Creator Registry
 ================
 Maps Telegram user IDs ↔ Creator names.
 
-Stored in Google Sheets tab "Registry" so staff can manage it without code changes.
+Primary: Google Sheets tab "Registry"
+Fallback: KNOWN_CREATORS env var (works even when Sheets is unreachable)
+Admins: always treated as registered (via ADMIN_TELEGRAM_IDS + ADMIN_CREATOR_NAME)
 
 Sheet structure (tab name: "Registry"):
 | Column A      | Column B        | Column C        | Column D     |
@@ -26,6 +28,26 @@ SHEETS_ID = os.environ.get("SHEETS_ID", "")
 PROCESSED_FOLDER_ID = os.environ.get("PROCESSED_FOLDER_ID", "")
 
 
+def _get_known_creators() -> dict[int, str]:
+    """
+    Parse KNOWN_CREATORS env var as a fallback registry.
+    Format: "telegram_id:Name,telegram_id:Name"
+    Example: "755651205:Marc,123456:Sofia"
+    """
+    raw = os.environ.get("KNOWN_CREATORS", "")
+    creators = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if ":" not in entry:
+            continue
+        tid, name = entry.split(":", 1)
+        try:
+            creators[int(tid.strip())] = name.strip()
+        except ValueError:
+            continue
+    return creators
+
+
 def _get_sheets_service():
     creds = get_credentials(scopes=["https://www.googleapis.com/auth/spreadsheets"])
     return build("sheets", "v4", credentials=creds)
@@ -35,32 +57,59 @@ def get_creator_by_telegram_id(telegram_id: int) -> dict | None:
     """
     Look up a creator's info by their Telegram user ID.
     Returns dict with 'name' and 'output_folder_id', or None if not registered.
+
+    Lookup order:
+      1. Google Sheets "Registry" tab (primary)
+      2. KNOWN_CREATORS env var (fallback when Sheets is unreachable)
+      3. Admin auto-recognition (admins are always treated as registered)
     """
+    # ── Try Sheets first ──────────────────────────────────────────────
+    sheets_ok = False
     try:
-        if not SHEETS_ID:
-            logger.error("SHEETS_ID env var is empty — cannot look up creators")
-            return None
-        service = _get_sheets_service()
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEETS_ID,
-            range="Registry!A2:D500"
-        ).execute()
-        rows = result.get("values", [])
-        for row in rows:
-            if not row:
-                continue
-            try:
-                row_telegram_id = int(row[0].strip())
-            except (ValueError, IndexError):
-                continue
-            if row_telegram_id == telegram_id:
-                return {
-                    "telegram_id": telegram_id,
-                    "name": row[1].strip() if len(row) > 1 else "Unknown",
-                    "output_folder_id": row[2].strip() if len(row) > 2 else PROCESSED_FOLDER_ID,
-                }
+        if SHEETS_ID:
+            service = _get_sheets_service()
+            result = service.spreadsheets().values().get(
+                spreadsheetId=SHEETS_ID,
+                range="Registry!A2:D500"
+            ).execute()
+            rows = result.get("values", [])
+            sheets_ok = True
+            for row in rows:
+                if not row:
+                    continue
+                try:
+                    row_telegram_id = int(row[0].strip())
+                except (ValueError, IndexError):
+                    continue
+                if row_telegram_id == telegram_id:
+                    return {
+                        "telegram_id": telegram_id,
+                        "name": row[1].strip() if len(row) > 1 else "Unknown",
+                        "output_folder_id": row[2].strip() if len(row) > 2 else PROCESSED_FOLDER_ID,
+                    }
     except Exception as e:
-        logger.error(f"Registry lookup error: {type(e).__name__}: {e}", exc_info=True)
+        logger.warning(f"Sheets lookup failed (using fallback): {type(e).__name__}: {e}")
+
+    # ── Fallback: KNOWN_CREATORS env var ──────────────────────────────
+    known = _get_known_creators()
+    if telegram_id in known:
+        logger.info(f"Found creator {telegram_id} in KNOWN_CREATORS fallback")
+        return {
+            "telegram_id": telegram_id,
+            "name": known[telegram_id],
+            "output_folder_id": PROCESSED_FOLDER_ID,
+        }
+
+    # ── Fallback: admin auto-recognition ──────────────────────────────
+    if not sheets_ok and is_admin(telegram_id):
+        admin_name = os.environ.get("ADMIN_CREATOR_NAME", "Admin")
+        logger.info(f"Sheets unreachable — auto-recognizing admin {telegram_id} as '{admin_name}'")
+        return {
+            "telegram_id": telegram_id,
+            "name": admin_name,
+            "output_folder_id": PROCESSED_FOLDER_ID,
+        }
+
     return None
 
 
