@@ -32,7 +32,14 @@ if not SHEETS_ID:
 def _try_adc(scopes):
     """Fallback: Application Default Credentials (Cloud Shell, GCE, etc.)."""
     import google.auth
-    creds, _project = google.auth.default(scopes=scopes)
+    # Temporarily unset GOOGLE_APPLICATION_CREDENTIALS so google.auth.default()
+    # doesn't pick up the same bad key file — it should use Cloud Shell's own creds.
+    saved = os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+    try:
+        creds, _project = google.auth.default(scopes=scopes)
+    finally:
+        if saved is not None:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = saved
     print(f"  Using Application Default Credentials (project: {_project})")
     return creds
 
