@@ -37,6 +37,9 @@ def get_creator_by_telegram_id(telegram_id: int) -> dict | None:
     Returns dict with 'name' and 'output_folder_id', or None if not registered.
     """
     try:
+        if not SHEETS_ID:
+            logger.error("SHEETS_ID env var is empty — cannot look up creators")
+            return None
         service = _get_sheets_service()
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEETS_ID,
@@ -57,15 +60,19 @@ def get_creator_by_telegram_id(telegram_id: int) -> dict | None:
                     "output_folder_id": row[2].strip() if len(row) > 2 else PROCESSED_FOLDER_ID,
                 }
     except Exception as e:
-        logger.error(f"Registry lookup error: {e}")
+        logger.error(f"Registry lookup error: {type(e).__name__}: {e}", exc_info=True)
     return None
 
 
-def register_creator(telegram_id: int, creator_name: str, output_folder_id: str = "") -> bool:
+def register_creator(telegram_id: int, creator_name: str, output_folder_id: str = "") -> tuple[bool, str]:
     """
     Register a new creator in the Registry sheet.
-    Called by staff via the /register command.
+    Returns (success, error_detail) so the caller can show a useful message.
     """
+    if not SHEETS_ID:
+        msg = "SHEETS_ID env var is empty — cannot write to registry"
+        logger.error(msg)
+        return False, msg
     try:
         service = _get_sheets_service()
         service.spreadsheets().values().append(
@@ -81,10 +88,12 @@ def register_creator(telegram_id: int, creator_name: str, output_folder_id: str 
                 ]]
             }
         ).execute()
-        return True
+        logger.info(f"Registered creator '{creator_name}' (telegram_id={telegram_id}) in sheet {SHEETS_ID}")
+        return True, ""
     except Exception as e:
-        logger.error(f"Registration error: {e}")
-        return False
+        msg = f"{type(e).__name__}: {e}"
+        logger.error(f"Registration error: {msg}", exc_info=True)
+        return False, msg
 
 
 def is_admin(telegram_id: int) -> bool:

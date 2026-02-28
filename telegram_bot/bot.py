@@ -364,6 +364,41 @@ async def cmd_creators(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
+async def cmd_addcreator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /addcreator <telegram_id> <name> — directly add a creator by ID."""
+    user = update.effective_user
+    if not is_admin(user.id):
+        await update.message.reply_text("❌ Admin only.")
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "Usage: `/addcreator <telegram_id> <CreatorName>`\n\n"
+            "Example: `/addcreator 755651205 Marc`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    try:
+        telegram_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ First argument must be a numeric Telegram ID.")
+        return
+
+    creator_name = " ".join(context.args[1:])
+    success, err = register_creator(telegram_id, creator_name)
+    if success:
+        await update.message.reply_text(
+            f"✅ Registered *{creator_name}* (ID: `{telegram_id}`) directly.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Failed to register.\n\nError: `{err[:300]}`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+
 # ── Video Message Handler ─────────────────────────────────────────────────────
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -378,25 +413,26 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for admin_id, reg_data in list(_pending_registrations.items()):
         creator_name = reg_data["creator_name"]
         logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' via video (initiated by admin {admin_id})")
-        success = register_creator(user.id, creator_name)
+        success, err = register_creator(user.id, creator_name)
         if success:
             del _pending_registrations[admin_id]
-            if user.id != admin_id:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"✅ Registered {user.first_name} as *{creator_name}* (ID: `{user.id}`)",
-                    parse_mode=ParseMode.MARKDOWN
-                )
+            # Notify admin (even if admin registered themselves)
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"✅ Registered {user.first_name} as *{creator_name}* (ID: `{user.id}`)",
+                parse_mode=ParseMode.MARKDOWN
+            )
             await message.reply_text(
                 f"You're now registered as *{creator_name}*! 🎉\n\n"
                 f"Processing your video now...",
                 parse_mode=ParseMode.MARKDOWN
             )
         else:
-            logger.error(f"register_creator failed for user {user.id} as '{creator_name}'")
+            logger.error(f"register_creator failed for user {user.id} as '{creator_name}': {err}")
             await message.reply_text(
-                "⚠️ Registration failed — could not write to the registry.\n"
-                "Check the Google Sheets connection and try again."
+                f"⚠️ Registration failed — could not write to the registry.\n\n"
+                f"Error: `{err[:300]}`",
+                parse_mode=ParseMode.MARKDOWN
             )
         break
 
@@ -499,26 +535,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for admin_id, reg_data in list(_pending_registrations.items()):
         creator_name = reg_data["creator_name"]
         logger.info(f"Registering user {user.id} ({user.first_name}) as '{creator_name}' (initiated by admin {admin_id})")
-        success = register_creator(user.id, creator_name)
+        success, err = register_creator(user.id, creator_name)
         if success:
             del _pending_registrations[admin_id]
-            # Notify the admin (only if a different person was registered)
-            if user.id != admin_id:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"✅ Registered {user.first_name} as *{creator_name}*",
-                    parse_mode=ParseMode.MARKDOWN
-                )
+            # Notify the admin (even if admin registered themselves)
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"✅ Registered {user.first_name} as *{creator_name}*",
+                parse_mode=ParseMode.MARKDOWN
+            )
             await message.reply_text(
                 f"You're now registered as *{creator_name}*! 🎉\n\n"
                 f"Just send me your video whenever you're ready.",
                 parse_mode=ParseMode.MARKDOWN
             )
         else:
-            logger.error(f"register_creator failed for user {user.id} as '{creator_name}'")
+            logger.error(f"register_creator failed for user {user.id} as '{creator_name}': {err}")
             await message.reply_text(
-                "⚠️ Registration failed — could not write to the registry.\n"
-                "Check the Google Sheets connection and try again."
+                f"⚠️ Registration failed — could not write to the registry.\n\n"
+                f"Error: `{err[:300]}`",
+                parse_mode=ParseMode.MARKDOWN
             )
         return
 
@@ -583,6 +619,7 @@ def main():
     app.add_handler(CommandHandler("status",    cmd_status))
     app.add_handler(CommandHandler("register",  cmd_register))
     app.add_handler(CommandHandler("creators",  cmd_creators))
+    app.add_handler(CommandHandler("addcreator", cmd_addcreator))
 
     # Video and document messages (large files sent as documents)
     app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
