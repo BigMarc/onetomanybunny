@@ -9,13 +9,11 @@ imageio>=2.31.0
 imageio-ffmpeg>=0.4.9
 numpy>=1.24.0
 
-# Google APIs
+# Google APIs (Drive + Sheets only — no Cloud Storage or Secret Manager)
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 google-api-python-client>=2.100.0
-google-cloud-storage>=2.10.0
-google-cloud-secret-manager>=2.16.0
 
 # Telegram bot
 python-telegram-bot>=20.7

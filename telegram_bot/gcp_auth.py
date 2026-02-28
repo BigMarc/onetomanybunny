@@ -1,9 +1,9 @@
 """
-Shared Google credentials helper.
+Shared Google credentials helper for the Telegram bot.
 
-Handles the case where GOOGLE_APPLICATION_CREDENTIALS contains
-either a file path OR the raw JSON content of the service account key
-(as happens with Cloud Run --set-secrets as env var).
+Handles both:
+- File path to service_account.json (local development)
+- Raw JSON content in env var (Cloud Run / Secret Manager injection)
 """
 
 import json
@@ -20,12 +20,12 @@ _cached_info: dict | None = None
 def get_credentials(scopes: list[str]):
     """
     Build Google credentials.
-    Supports: raw JSON env var, file path, or Application Default Credentials (ADC).
+    Supports: raw JSON env var or file path.
     """
     global _cached_info
-    raw = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    val = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 
-    stripped = raw.strip()
+    stripped = val.strip()
     if stripped.startswith("{"):
         # Raw JSON content (Cloud Run --set-secrets)
         if _cached_info is None:
@@ -34,21 +34,13 @@ def get_credentials(scopes: list[str]):
         return service_account.Credentials.from_service_account_info(
             _cached_info, scopes=scopes
         )
-    elif stripped and os.path.isfile(stripped):
-        # File path to service account key
+    else:
+        # File path to service account key (local development)
+        if not os.path.exists(stripped):
+            raise RuntimeError(
+                f"service_account.json not found at '{stripped}'.\n"
+                f"Download it from: Google Cloud Console → IAM → Service Accounts → Keys"
+            )
         return service_account.Credentials.from_service_account_file(
             stripped, scopes=scopes
         )
-    else:
-        # Fallback: Application Default Credentials (Cloud Shell, GCE, etc.)
-        # Temporarily unset GOOGLE_APPLICATION_CREDENTIALS so ADC doesn't
-        # pick up the same bad key file.
-        import google.auth
-        saved = os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
-        try:
-            creds, _project = google.auth.default(scopes=scopes)
-        finally:
-            if saved is not None:
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = saved
-        logger.info("Using Application Default Credentials (project: %s)", _project)
-        return creds
